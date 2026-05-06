@@ -1058,7 +1058,9 @@ PAGED NTSTATUS usbip::DeviceAdd(_In_ WDFDRIVER, _Inout_ WDFDEVICE_INIT *init)
         }
 
         Trace(TRACE_LEVEL_INFORMATION, "vhci %04x", ptr04x(vhci));
-        plugin_persistent_devices(vhci);
+        // Session isolation is enforced in user mode after explicit attach only.
+        // Driver-load persistent auto-attach would create unstamped devnodes.
+        // plugin_persistent_devices(vhci);
 
         return STATUS_SUCCESS;
 }

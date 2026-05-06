@@ -120,16 +120,23 @@ Exportable USB devices
            : (Defined at Interface level) (00/00/00)
 ```
 - Attach desired remote USB device using its busid
+  - Run the command from an elevated (Administrator) console.
   - `usbip.exe attach -r <usbip server ip> -b 3-2`
 ```
 successfully attached to port 1
 ```
+- Session isolation is enabled by default for attach.
+  - The newly created USB devnode is stamped with `DEVPKEY_Device_SessionId` for the caller session.
+  - If isolation fails (for example non-elevated run), attach fails closed and the device is detached.
+- The `--once` flag is kept for compatibility and is now equivalent to default attach behavior.
+- Automatic reattach and stashed-device auto-attach are disabled when isolation is enforced.
 - New USB device should appear in the system, use it as usual
 - Detach the remote USB device using its usb port, pass `-all` to detach all remote devices
   - `usbip.exe detach -p 1`
 ```
 port 1 is successfully detached
 ```
+- For GUI usage, start `wusbip.exe` as Administrator before attaching devices.
 ### Uninstallation of USB/IP
 - Uninstall USB/IP app
 - Disable test signing if it was enabled during the installation

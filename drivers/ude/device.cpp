@@ -790,9 +790,8 @@ PAGED wdm::object_reference usbip::device::detach(
         }
 
         if (reattach) {
-                auto ctx = get_vhci_ctx(vhci);
-                auto delayed = plugout_and_delete;
-                start_attach_attempts(vhci, *ctx, ext.attr, delayed);
+                // Session isolation is fail-closed in user mode; do not spawn
+                // in-driver reattach attempts that would enumerate unstamped devnodes.
         }
 
         return thread;

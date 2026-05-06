@@ -449,7 +449,9 @@ PAGED void NTAPI complete(_In_ WDFWORKITEM wi)
                 stop_attach_attempts(vhci, hash);
         } else if (NT_ERROR(st) && can_reattach(ctx.vhci, hash, st)) {
                 stop_attach_attempts(vhci, hash);
-                start_attach_attempts(ctx.vhci, vhci, ext.attr, true);
+                // Session isolation is applied by user mode only after attach().
+                // Do not queue automatic in-driver retries that could plug devices
+                // without stamping DEVPKEY_Device_SessionId.
         }
 
         WdfObjectDelete(wi); // do not use ctx.request more, see workitem_cleanup

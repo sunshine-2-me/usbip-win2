@@ -6,6 +6,7 @@
 
 #include "device_speed.h"
 #include "output.h"
+#include "session_isolation.h"
 
 #include <resources\messages.h>
 #include <cfgmgr32.h>
@@ -268,7 +269,8 @@ USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &l
                 return 0;
         }
 
-        auto ctl = options & ATTACH_ONCE ? ioctl::PLUGIN_HARDWARE_ONCE : ioctl::PLUGIN_HARDWARE;
+        (void)options;
+        auto ctl = ioctl::PLUGIN_HARDWARE_ONCE;
         constexpr auto outlen = offsetof(ioctl::plugin_hardware, port) + sizeof(r.port);
 
         if (DWORD BytesReturned{}; // must be set if the last arg is NULL
@@ -278,6 +280,14 @@ USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &l
                         SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
                 } else {
                         assert(r.port > 0);
+
+                        if (!session_isolation::isolate_attached_usb_device_to_current_session(dev, r.port)) {
+                                auto err = GetLastError();
+                                detach(dev, r.port);
+                                SetLastError(err);
+                                return 0;
+                        }
+
                         return r.port;
                 }
         }

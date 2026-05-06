@@ -286,7 +286,7 @@ Frame::Frame( wxWindow* parent, wxWindowID id, const wxString& title, const wxPo
 	m_menu_devices->Append( m_cmd_attach );
 
 	wxMenuItem* m_cmd_attach_once;
-	m_cmd_attach_once = new wxMenuItem( m_menu_devices, ID_ATTACH_ONCE, wxString( _("Attach Once") ) , _("Attach selected devices, disable automatic attach attempts"), wxITEM_NORMAL );
+	m_cmd_attach_once = new wxMenuItem( m_menu_devices, ID_ATTACH_ONCE, wxString( _("Attach Once (Legacy)") ) , _("Legacy option, attach already runs in one-shot isolated mode"), wxITEM_NORMAL );
 	#ifdef __WXMSW__
 	m_cmd_attach_once->SetBitmaps( wxNullBitmap );
 	#elif (defined( __WXGTK__ ) || defined( __WXOSX__ ))

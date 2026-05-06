@@ -71,7 +71,7 @@ void add_cmd_attach(CLI::App &app)
 	rem->add_flag("-t,--terse", r.terse, "Show port number as a result");
 
         auto stop = rem->add_flag("-x,--stop", r.stop, "Stop attach attempts to this device");
-        rem->add_flag("--once", r.once, "Do not run automatic attach attempts if the command fails")->excludes(stop);
+        rem->add_flag("--once", r.once, "Legacy option, attach already runs in one-shot isolated mode")->excludes(stop);
 
 	cmd->add_option_group("Stop")
 		->add_flag("-X,--stop-all", r.stop_all, "Stop all active attach attempts");
