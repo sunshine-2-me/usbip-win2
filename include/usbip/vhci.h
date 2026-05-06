@@ -27,6 +27,8 @@ namespace usbip::vhci
 
 DEFINE_GUID(GUID_DEVINTERFACE_USB_HOST_CONTROLLER,
         0xB4030C06, 0xDC5F, 0x4FCC, 0x87, 0xEB, 0xE5, 0x51, 0x5A, 0x09, 0x35, 0xC0);
+DEFINE_GUID(GUID_DEVINTERFACE_USBIP_BUS,
+        0x8a992661, 0x56a6, 0x496e, 0x81, 0x4e, 0x22, 0x12, 0x14, 0x37, 0x12, 0x88);
 
 struct base
 {
@@ -84,6 +86,7 @@ enum class function { // 12 bit
         stop_attach_attempts,
         plugin_hardware_once,
         plugout_hardware_and_reattach,
+        spawn_session_hc,
 };
 
 constexpr auto make(function id)
@@ -100,6 +103,7 @@ enum {
         STOP_ATTACH_ATTEMPTS = make(function::stop_attach_attempts),
         PLUGIN_HARDWARE_ONCE = make(function::plugin_hardware_once),
         PLUGOUT_HARDWARE_AND_REATTACH = make(function::plugout_hardware_and_reattach), // for internal use only
+        SPAWN_SESSION_HC = make(function::spawn_session_hc),
 };
 
 struct plugin_hardware : base, imported_device_location {};
@@ -117,6 +121,12 @@ struct plugout_hardware : base
 struct get_imported_devices : base
 {
         imported_device devices[ANYSIZE_ARRAY];
+};
+
+struct spawn_session_hc : base
+{
+        ULONG session_id;
+        BOOLEAN created;
 };
 
 constexpr auto get_imported_devices_size(_In_ ULONG n)

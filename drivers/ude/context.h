@@ -35,6 +35,8 @@ namespace usbip
  */
 struct vhci_ctx
 {
+        ULONG session_id;
+
         int usb2_ports; // constant
 
         int devices_cnt; // constant, usb2_ports + usb3 ports

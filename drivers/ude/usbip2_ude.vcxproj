@@ -25,6 +25,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\userspace\libusbip\src\proto_op.cpp" />
+    <ClCompile Include="bus.cpp" />
     <ClCompile Include="context.cpp" />
     <ClCompile Include="device_ioctl.cpp" />
     <ClCompile Include="request_list.cpp" />
@@ -47,6 +48,7 @@
     <ClInclude Include="..\..\include\usbip\proto.h" />
     <ClInclude Include="..\..\include\usbip\proto_op.h" />
     <ClInclude Include="..\..\include\usbip\vhci.h" />
+    <ClInclude Include="bus.h" />
     <ClInclude Include="context.h" />
     <ClInclude Include="device_ioctl.h" />
     <ClInclude Include="request_list.h" />

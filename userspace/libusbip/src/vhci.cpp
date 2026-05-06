@@ -9,8 +9,8 @@
 
 #include <resources\messages.h>
 #include <cfgmgr32.h>
-
 #include <initguid.h>
+#include <devpkey.h>
 #include <usbip\vhci.h>
 
 #include <span>
@@ -120,10 +120,9 @@ auto make_device_state(_In_ const vhci::device_state &r)
         };
 }
 
-auto get_path()
+auto get_paths(_In_ GUID *guid)
 {
-        auto guid = const_cast<GUID*>(&vhci::GUID_DEVINTERFACE_USB_HOST_CONTROLLER);
-        std::wstring path;
+        std::vector<std::wstring> paths;
 
         for (std::wstring multi_sz; true; ) {
 
@@ -132,7 +131,7 @@ auto get_path()
                         libusbip::output("CM_Get_Device_Interface_List_Size error #{}", err);
                         auto code = CM_MapCrToWin32Err(err, ERROR_INVALID_PARAMETER);
                         SetLastError(code);
-                        return path;
+                        return paths;
                 } 
 
                 multi_sz.resize(cch); // "path1\0path2\0pathn\0\0"
@@ -140,28 +139,151 @@ auto get_path()
                 switch (auto err = CM_Get_Device_Interface_List(guid, nullptr, multi_sz.data(), cch, CM_GET_DEVICE_INTERFACE_LIST_PRESENT)) {
                 case CR_SUCCESS:
                         if (auto v = split_multi_sz(multi_sz); auto n = v.size()) {
-                                if (n == 1) {
-                                        path = v.front();
-                                        assert(!path.empty());
-                                } else {
-                                        libusbip::output("CM_Get_Device_Interface_List: {} paths returned", n);
-                                        SetLastError(USBIP_ERROR_DEVICE_INTERFACE_LIST);
-                                }
+                                paths = std::move(v);
                         } else {
                                 assert(multi_sz.size() == 1); // if not found, returns CR_SUCCESS and ""
                                 assert(!multi_sz.front());
-                                SetLastError(USBIP_ERROR_VHCI_NOT_FOUND);
                         }
-                        return path;
+                        return paths;
                 case CR_BUFFER_SMALL:
                         break;
                 default:
                         libusbip::output("CM_Get_Device_Interface_List error #{}", err);
                         auto code = CM_MapCrToWin32Err(err, ERROR_NOT_ENOUGH_MEMORY);
                         SetLastError(code);
+                        return paths;
+                }
+        }
+}
+
+auto get_path(_In_ GUID *guid)
+{
+        auto paths = get_paths(guid);
+        if (paths.empty()) {
+                return std::wstring{};
+        }
+        if (paths.size() > 1) {
+                SetLastError(USBIP_ERROR_DEVICE_INTERFACE_LIST);
+                return std::wstring{};
+        }
+
+        return paths.front();
+}
+
+auto get_process_session_id()
+{
+        DWORD session_id{};
+        return ProcessIdToSessionId(GetCurrentProcessId(), &session_id) ? session_id : DWORD(-1);
+}
+
+auto try_get_interface_session_id(_In_ const std::wstring &path, _Out_ ULONG &session_id)
+{
+        DEVPROPTYPE type{};
+        ULONG char_count{};
+
+        auto err = CM_Get_Device_Interface_PropertyW(path.c_str(),
+                                                     const_cast<DEVPROPKEY*>(&DEVPKEY_Device_InstanceId),
+                                                     &type,
+                                                     nullptr,
+                                                     &char_count,
+                                                     0);
+        if (err != CR_BUFFER_SMALL || type != DEVPROP_TYPE_STRING || char_count < sizeof(wchar_t)) {
+                return false;
+        }
+
+        std::wstring instance_id(char_count / sizeof(wchar_t), L'\0');
+        err = CM_Get_Device_Interface_PropertyW(path.c_str(),
+                                                const_cast<DEVPROPKEY*>(&DEVPKEY_Device_InstanceId),
+                                                &type,
+                                                reinterpret_cast<PBYTE>(instance_id.data()),
+                                                &char_count,
+                                                0);
+        if (err != CR_SUCCESS || type != DEVPROP_TYPE_STRING) {
+                return false;
+        }
+
+        DEVINST inst{};
+        err = CM_Locate_DevNodeW(&inst, instance_id.data(), CM_LOCATE_DEVNODE_NORMAL);
+        if (err != CR_SUCCESS) {
+                return false;
+        }
+
+        ULONG value_size = sizeof(session_id);
+        type = DEVPROP_TYPE_EMPTY;
+        err = CM_Get_DevNode_PropertyW(inst,
+                                       const_cast<DEVPROPKEY*>(&DEVPKEY_Device_SessionId),
+                                       &type,
+                                       reinterpret_cast<PBYTE>(&session_id),
+                                       &value_size,
+                                       0);
+
+        return err == CR_SUCCESS && type == DEVPROP_TYPE_UINT32;
+}
+
+auto get_session_vhci_path()
+{
+        auto guid = const_cast<GUID*>(&vhci::GUID_DEVINTERFACE_USB_HOST_CONTROLLER);
+        auto paths = get_paths(guid);
+        if (paths.empty()) {
+                SetLastError(USBIP_ERROR_VHCI_NOT_FOUND);
+                return std::wstring{};
+        }
+
+        if (paths.size() == 1) {
+                return paths.front();
+        }
+
+        const auto session_id = get_process_session_id();
+        if (session_id == DWORD(-1)) {
+                return std::wstring{};
+        }
+
+        for (auto &path: paths) {
+                ULONG device_session{};
+                if (try_get_interface_session_id(path, device_session) && device_session == session_id) {
                         return path;
                 }
         }
+
+        SetLastError(USBIP_ERROR_DEVICE_INTERFACE_LIST);
+        return std::wstring{};
+}
+
+bool spawn_session_hc(_In_ const std::wstring &bus_path)
+{
+        Handle bus(CreateFile(bus_path.c_str(),
+                              GENERIC_READ | GENERIC_WRITE,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE,
+                              nullptr,
+                              OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL,
+                              nullptr));
+        if (!bus) {
+                return false;
+        }
+
+        vhci::ioctl::spawn_session_hc out{};
+        out.size = sizeof(out);
+        DWORD bytes{};
+        return DeviceIoControl(bus.get(),
+                               vhci::ioctl::SPAWN_SESSION_HC,
+                               nullptr,
+                               0,
+                               &out,
+                               sizeof(out),
+                               &bytes,
+                               nullptr) != FALSE;
+}
+
+auto wait_for_session_vhci_path()
+{
+        for (int i = 0; i < 30; ++i) {
+                if (auto path = get_session_vhci_path(); !path.empty()) {
+                        return path;
+                }
+                Sleep(100);
+        }
+        return std::wstring{};
 }
 
 } // namespace
@@ -198,7 +320,15 @@ auto usbip::vhci::open(_In_ bool overlapped) -> Handle
 
         Handle h;
 
-        if (auto path = get_path(); !path.empty()) {
+        auto path = get_session_vhci_path();
+        if (path.empty()) {
+                auto bus_guid = const_cast<GUID*>(&vhci::GUID_DEVINTERFACE_USBIP_BUS);
+                if (auto bus_path = get_path(bus_guid); !bus_path.empty() && spawn_session_hc(bus_path)) {
+                        path = wait_for_session_vhci_path();
+                }
+        }
+
+        if (!path.empty()) {
                 h.reset(CreateFile(path.c_str(), 
                                 GENERIC_READ | GENERIC_WRITE, 
                                 FILE_SHARE_READ | FILE_SHARE_WRITE, 

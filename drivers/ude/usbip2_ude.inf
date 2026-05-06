@@ -26,7 +26,14 @@ usbip2_ude.sys = 1
 %Manufacturer%=Standard,NT$ARCH$.10.0...17763
 
 [Standard.NT$ARCH$.10.0...17763]
-%DisplayName%=ude_Device, ROOT\USBIP_WIN2\UDE
+%BusDisplayName%=bus_Device, ROOT\USBIP_WIN2\UDE
+%DisplayName%=ude_Device, USBIP\VirtualHostController
+
+[bus_Device.NT]
+CopyFiles=@usbip2_ude.sys
+
+[bus_Device.NT.Services]
+AddService = usbip2_ude,2,ude_Device_Service_Inst
 
 [ude_Device.NT]
 CopyFiles=@usbip2_ude.sys
@@ -81,5 +88,6 @@ HKR, Parameters, ReattachMaxDelay, %REG_DWORD%, 480 ; seconds
 
 [Strings]
 Manufacturer = "USBIP-WIN2"
+BusDisplayName = "USBIP-WIN2 Session Bus Enumerator"
 DisplayName = "USBip 3.X Emulated Host Controller" ; for device and service
 REG_DWORD = 0x00010001 ; FLG_ADDREG_TYPE_DWORD

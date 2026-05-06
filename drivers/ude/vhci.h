@@ -21,6 +21,10 @@ namespace usbip::vhci
 {
 
 _IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS device_add(_Inout_ WDFDEVICE_INIT *init);
+
+_IRQL_requires_same_
 _IRQL_requires_max_(DISPATCH_LEVEL)
 int claim_roothub_port(_In_ UDECXUSBDEVICE device);
 

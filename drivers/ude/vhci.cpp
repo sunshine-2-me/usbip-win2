@@ -7,6 +7,7 @@
 #include "vhci.tmh"
 
 #include "driver.h"
+#include "bus.h"
 #include "device.h"
 #include "vhci_ioctl.h"
 #include "persistent.h"
@@ -15,6 +16,7 @@
 #include <libdrv/utils.h>
 
 #include <ntstrsafe.h>
+#include <devpkey.h>
 #include <usbdlib.h>
 #include <usbiodef.h>
 
@@ -22,6 +24,99 @@ namespace
 {
 
 using namespace usbip;
+
+enum class device_role { bus, vhci, unknown };
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED bool multi_sz_contains(_In_reads_bytes_(length) const wchar_t *data, _In_ ULONG length, _In_ PCWSTR value)
+{
+        PAGED_CODE();
+        if (!data || !length || !value) {
+                return false;
+        }
+
+        size_t bytes_left = length;
+        for (auto cur = data; bytes_left >= sizeof(wchar_t) && *cur; ) {
+                UNICODE_STRING candidate{};
+                RtlInitUnicodeString(&candidate, cur);
+                if (_wcsicmp(cur, value) == 0) {
+                        return true;
+                }
+
+                auto consumed = candidate.Length + sizeof(wchar_t);
+                if (consumed > bytes_left) {
+                        break;
+                }
+
+                bytes_left -= consumed;
+                cur += consumed / sizeof(wchar_t);
+        }
+
+        return false;
+}
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED device_role query_role_from_hardware_ids(_In_ WDFDEVICE_INIT *init)
+{
+        PAGED_CODE();
+
+        auto pdo = WdfFdoInitWdmGetPhysicalDevice(init);
+        if (!pdo) {
+                return device_role::unknown;
+        }
+
+        ULONG cb{};
+        auto st = IoGetDeviceProperty(pdo, DevicePropertyHardwareID, 0, nullptr, &cb);
+        if (st != STATUS_BUFFER_TOO_SMALL || cb < sizeof(wchar_t)) {
+                return device_role::unknown;
+        }
+
+        unique_ptr hwids(NonPagedPoolNx, cb);
+        if (!hwids) {
+                return device_role::unknown;
+        }
+
+        st = IoGetDeviceProperty(pdo, DevicePropertyHardwareID, cb, hwids.get(), &cb);
+        if (NT_ERROR(st)) {
+                return device_role::unknown;
+        }
+
+        auto ids = hwids.get<const wchar_t>();
+        if (multi_sz_contains(ids, cb, L"ROOT\\USBIP_WIN2\\UDE")) {
+                return device_role::bus;
+        }
+        if (multi_sz_contains(ids, cb, L"USBIP\\VirtualHostController")) {
+                return device_role::vhci;
+        }
+
+        return device_role::unknown;
+}
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED ULONG query_session_id(_In_ PDEVICE_OBJECT pdo)
+{
+        PAGED_CODE();
+        ULONG session_id{};
+        DEVPROPTYPE type{};
+        ULONG req_size{};
+        auto st = IoGetDevicePropertyData(
+                pdo,
+                &DEVPKEY_Device_SessionId,
+                LOCALE_NEUTRAL,
+                0,
+                sizeof(session_id),
+                &session_id,
+                &req_size,
+                &type);
+
+        if (NT_SUCCESS(st) && type == DEVPROP_TYPE_UINT32) {
+                return session_id;
+        }
+        return 0;
+}
 
 /*
  * WDF calls the callback at PASSIVE_LEVEL if object's handle type is WDFDEVICE.
@@ -48,6 +143,7 @@ PAGED void vhci_cleanup(_In_ WDFOBJECT object)
 
         ctx.devices_cnt = 0;
         ctx.usb2_ports = 0;
+        bus::mark_session_controller_in_use(vhci, false);
 }
 
 _Function_class_(EVT_WDF_IO_QUEUE_IO_CANCELED_ON_QUEUE)
@@ -1048,6 +1144,22 @@ PAGED NTSTATUS usbip::DeviceAdd(_In_ WDFDRIVER, _Inout_ WDFDEVICE_INIT *init)
 {
         PAGED_CODE();
 
+        switch (query_role_from_hardware_ids(init)) {
+        case device_role::bus:
+                return bus::device_add(init);
+        case device_role::vhci:
+                return vhci::device_add(init);
+        default:
+                return STATUS_NO_SUCH_DEVICE;
+        }
+}
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS usbip::vhci::device_add(_Inout_ WDFDEVICE_INIT *init)
+{
+        PAGED_CODE();
+
         if (auto err = initialize(init)) {
                 return err;
         }
@@ -1057,8 +1169,15 @@ PAGED NTSTATUS usbip::DeviceAdd(_In_ WDFDRIVER, _Inout_ WDFDEVICE_INIT *init)
                 return err; // the framework handles deletion of WDFDEVICE
         }
 
+        if (auto ctx = get_vhci_ctx(vhci)) {
+                ctx->session_id = query_session_id(WdfDeviceWdmGetPhysicalDevice(vhci));
+        }
+
         Trace(TRACE_LEVEL_INFORMATION, "vhci %04x", ptr04x(vhci));
-        plugin_persistent_devices(vhci);
+        bus::mark_session_controller_in_use(vhci, true);
+        if (get_vhci_ctx(vhci)->session_id == 0) {
+                plugin_persistent_devices(vhci);
+        }
 
         return STATUS_SUCCESS;
 }
