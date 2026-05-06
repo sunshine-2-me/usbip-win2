@@ -46,6 +46,14 @@ Set upper filter for Emulated HC only is a good idea, but it is not possible to 
 to modify its HWID. WdfDeviceInitAssignWdmIrpPreprocessCallback will return STATUS_INVALID_DEVICE_REQUEST
 if pass IRP_MJ_PNP/IRP_MN_QUERY_ID. If pass IRP_MJ_PNP only, the callback will never be called.
 
+### Session isolation (IRP_MJ_CREATE)
+
+For usbip-win2 devices under this filter stack, `dispatch_create` denies user-mode
+`IRP_MJ_CREATE` when `IoGetRequestorSessionId` does not match `DEVPKEY_Device_SessionId`
+on the PDO (set by user-mode after attach). Shared / Session-0 attaches skip stamping and
+are not enforced here. Class stacks above USB (HID serial disk volume) may still need
+separate filters for strict isolation.
+
 ### Alternative implementation
 
 Commit "Use AddFilter directive instead of AddReg/DelReg", af6715703d71a3acce9039fee78fb366ae9256f9

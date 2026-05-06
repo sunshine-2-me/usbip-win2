@@ -3,6 +3,7 @@
   <ItemGroup>
     <ClCompile Include="driver.cpp" />
     <ClCompile Include="device.cpp" />
+    <ClCompile Include="create.cpp" />
     <ClCompile Include="pnp.cpp" />
     <ClCompile Include="int_dev_ctrl.cpp" />
     <ClCompile Include="request.cpp" />
@@ -12,6 +13,7 @@
     <ClInclude Include="driver.h" />
     <ClInclude Include="trace.h" />
     <ClInclude Include="device.h" />
+    <ClInclude Include="create.h" />
     <ClInclude Include="pnp.h" />
     <ClInclude Include="int_dev_ctrl.h" />
     <ClInclude Include="irp.h" />

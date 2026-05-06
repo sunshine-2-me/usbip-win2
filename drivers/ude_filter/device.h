@@ -34,6 +34,9 @@ struct filter_ext
 		struct {
 			IO_REMOVE_LOCK *parent_remove_lock; // -> hub filter_ext.remove_lock
 			USBD_HANDLE usbd_handle;
+			ULONG owner_session_id;
+			BOOLEAN owner_session_valid;
+			BOOLEAN owner_loaded;
 		} device; // is_hub == false
 	};
 	bool is_hub;

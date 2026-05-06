@@ -6,6 +6,8 @@
 
 #include "device_speed.h"
 #include "output.h"
+#include "session_stamp.h"
+#include "strconv.h"
 
 #include <resources\messages.h>
 #include <cfgmgr32.h>
@@ -14,6 +16,7 @@
 #include <usbip\vhci.h>
 
 #include <span>
+#include <string>
 
 namespace
 {
@@ -255,6 +258,37 @@ std::optional<std::vector<usbip::imported_device>> usbip::vhci::get_imported_dev
         return devices;
 }
 
+USBIP_API std::optional<ULONG> usbip::vhci::get_device_owner_session(_In_ HANDLE dev, _In_ int port)
+{
+        ioctl::get_device_owner_session r {};
+        r.size = sizeof(r);
+        r.port = port;
+
+        DWORD BytesReturned{};
+        if (!DeviceIoControl(
+                        dev,
+                        ioctl::GET_DEVICE_OWNER_SESSION,
+                        &r,
+                        sizeof(r),
+                        &r,
+                        sizeof(r),
+                        &BytesReturned,
+                        nullptr)) {
+                return std::nullopt;
+        }
+
+        if (BytesReturned != sizeof(r)) [[unlikely]] {
+                SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
+                return std::nullopt;
+        }
+
+        if (!r.session_valid) {
+                return std::nullopt;
+        }
+
+        return r.session_id;
+}
+
 USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &location, _In_ unsigned long options)
 {
         if (options && options != ATTACH_ONCE) {
@@ -278,6 +312,19 @@ USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &l
                         SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
                 } else {
                         assert(r.port > 0);
+                        if (auto own = get_device_owner_session(dev, r.port)) {
+                                std::wstring estamp;
+                                if (!stamp_session_property(dev, r.port, *own, estamp)) {
+                                        detach(dev, r.port);
+                                        SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
+                                        libusbip::output(
+                                                "stamp_session_property failed port {} session {}: {}",
+                                                r.port,
+                                                *own,
+                                                wchar_to_utf8_or_errmsg(estamp));
+                                        return 0;
+                                }
+                        }
                         return r.port;
                 }
         }

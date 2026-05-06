@@ -86,6 +86,11 @@ enum attach_flags_t : unsigned long {
 USBIP_API int attach(_In_ HANDLE dev, _In_ const device_location &location, _In_ unsigned long options);
 
 /**
+ * @return owner RDP session id for devices attached from an interactive session; empty if shared / Session 0.
+ */
+USBIP_API std::optional<ULONG> get_device_owner_session(_In_ HANDLE dev, _In_ int port);
+
+/**
  * The same as attach(..., options=0)
  */
 USBIP_API int attach(_In_ HANDLE dev, _In_ const device_location &location);

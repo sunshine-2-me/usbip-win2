@@ -104,6 +104,13 @@ struct device_ctx_ext
 
         device_attributes attr;
 
+        /*
+         * RDP session id of the IOCTL caller that attached this device (IoGetRequestorSessionId).
+         * session_id 0 with owner_session_valid false => shared (Session 0 / kernel reattach).
+         */
+        bool owner_session_valid;
+        ULONG owner_session_id;
+
         auto node_name() { return &attr.node_name; }
         auto service_name() { return &attr.service_name; }
         auto busid() { return &attr.busid; }
@@ -264,7 +271,11 @@ constexpr UINT32 make_devid(UINT16 busnum, UINT16 devnum)
 
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
-PAGED NTSTATUS create_device_ctx_ext(_Inout_ WDFMEMORY &ctx_ext, _In_ WDFOBJECT parent, _In_ const vhci::ioctl::plugin_hardware &r);
+PAGED NTSTATUS create_device_ctx_ext(
+        _Inout_ WDFMEMORY &ctx_ext,
+        _In_ WDFOBJECT parent,
+        _In_ const vhci::ioctl::plugin_hardware &r,
+        _In_ ULONG owner_session_id);
 
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)

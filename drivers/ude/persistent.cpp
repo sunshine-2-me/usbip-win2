@@ -290,6 +290,12 @@ void send_plugin_hardware(
 }
 
 /*
+ * Background PLUGIN_HARDWARE_ONCE from this path originates in kernel/timer context.
+ * IoGetRequestorSessionId yields session 0 -> device_ctx_ext.owner_session_valid false (shared attach).
+ * User-mode does not stamp DEVPKEY_Device_SessionId; session CREATE enforcement is skipped.
+ */
+
+/*
  * If an EvtTimerFunc callback function running at PASSIVE_LEVEL calls WdfObjectDelete,
  * this results in deadlock. Request is a parent of a timer, the timer will be
  * implicitly deleted when the request is deleted.

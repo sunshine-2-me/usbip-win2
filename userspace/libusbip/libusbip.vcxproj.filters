@@ -28,6 +28,9 @@
     <ClCompile Include="src\vhci.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\session_stamp.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
     <ClCompile Include="src\remote.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -69,6 +72,9 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="src\setupapi.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\session_stamp.h">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="persistent.h" />

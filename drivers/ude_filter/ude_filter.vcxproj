@@ -193,6 +193,7 @@
     <ClCompile Include="query_interface.cpp" />
     <ClCompile Include="request.cpp" />
     <ClCompile Include="device.cpp" />
+    <ClCompile Include="create.cpp" />
     <ClCompile Include="driver.cpp" />
     <ClCompile Include="int_dev_ctrl.cpp" />
     <ClCompile Include="pnp.cpp" />
@@ -202,6 +203,7 @@
     <ClInclude Include="request.h" />
     <ClInclude Include="irp.h" />
     <ClInclude Include="device.h" />
+    <ClInclude Include="create.h" />
     <ClInclude Include="driver.h" />
     <ClInclude Include="int_dev_ctrl.h" />
     <ClInclude Include="pnp.h" />

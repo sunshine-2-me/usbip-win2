@@ -22,6 +22,11 @@
 #include <ntstrsafe.h>
 #include <usbuser.h>
 
+EXTERN_C
+_IRQL_requires_max_(DISPATCH_LEVEL)
+_IRQL_requires_same_
+NTSTATUS IoGetRequestorSessionId(_In_ PIRP Irp, _Out_ PULONG SessionId);
+
 namespace
 {
 
@@ -529,11 +534,15 @@ PAGED void getaddrinfo(
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
 PAGED auto plugin_hardware(
-        _In_ WDFREQUEST request, _In_ const vhci::ioctl::plugin_hardware &r, _In_ bool once)
+        _In_ WDFREQUEST request,
+        _In_ const vhci::ioctl::plugin_hardware &r,
+        _In_ bool once,
+        _In_ ULONG owner_session_id)
 {
         PAGED_CODE();
 
-        Trace(TRACE_LEVEL_INFORMATION, "%s:%s/%s, once %!bool!", r.host, r.service, r.busid, once);
+        Trace(TRACE_LEVEL_INFORMATION, "%s:%s/%s, once %!bool!, owner session %lu",
+                r.host, r.service, r.busid, once, owner_session_id);
         auto vhci = get_vhci(request);
 
         WDFWORKITEM wi{};
@@ -547,7 +556,7 @@ PAGED auto plugin_hardware(
         ctx.request = request;
         ctx.one_attempt = once;
 
-        if (auto err = create_device_ctx_ext(ctx.ctx_ext, vhci, r)) {
+        if (auto err = create_device_ctx_ext(ctx.ctx_ext, vhci, r, owner_session_id)) {
                 WdfObjectDelete(wi);
                 return err;
         }
@@ -627,7 +636,15 @@ PAGED NTSTATUS plugin_hardware(_In_ WDFREQUEST request, _In_ bool once)
         constexpr auto written = offsetof(vhci::ioctl::plugin_hardware, port) + sizeof(r->port);
         WdfRequestSetInformation(request, written);
 
-        return plugin_hardware(request, *r, once);
+        ULONG owner_session_id{};
+        auto irp = WdfRequestWdmGetIrp(request);
+        const auto sess_st = IoGetRequestorSessionId(irp, &owner_session_id);
+        if (!NT_SUCCESS(sess_st)) {
+                Trace(TRACE_LEVEL_ERROR, "IoGetRequestorSessionId %!STATUS!", sess_st);
+                return STATUS_INVALID_DEVICE_STATE;
+        }
+
+        return plugin_hardware(request, *r, once, owner_session_id);
 }
 
 _IRQL_requires_same_
@@ -708,6 +725,46 @@ PAGED NTSTATUS get_imported_devices(_In_ WDFREQUEST request)
         NT_ASSERT(written <= outlen);
         WdfRequestSetInformation(request, written);
 
+        return STATUS_SUCCESS;
+}
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS get_device_owner_session(_In_ WDFREQUEST request)
+{
+        PAGED_CODE();
+        WdfRequestSetInformation(request, 0);
+
+        vhci::ioctl::get_device_owner_session *r{};
+
+        if (size_t outlen{};
+            auto err = WdfRequestRetrieveOutputBuffer(request, sizeof(*r), reinterpret_cast<PVOID*>(&r), &outlen)) {
+                return err;
+        } else if (outlen < sizeof(*r)) {
+                return STATUS_BUFFER_TOO_SMALL;
+        } else if (r->size != sizeof(*r)) {
+                Trace(TRACE_LEVEL_ERROR, "get_device_owner_session.size %lu != sizeof(get_device_owner_session) %Iu",
+                        r->size, sizeof(*r));
+
+                return USBIP_ERROR_ABI;
+        }
+
+        auto vhci = get_vhci(request);
+        auto &ctx = *get_vhci_ctx(vhci);
+
+        if (!is_valid_port(ctx, r->port)) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        if (auto dev = vhci::get_device(vhci, r->port); !dev) {
+                return STATUS_DEVICE_NOT_CONNECTED;
+        } else {
+                auto &ext = get_device_ctx(dev.get())->ext();
+                r->session_id = ext.owner_session_id;
+                r->session_valid = ext.owner_session_valid ? 1UL : 0UL;
+        }
+
+        WdfRequestSetInformation(request, sizeof(*r));
         return STATUS_SUCCESS;
 }
 
@@ -865,6 +922,8 @@ PAGED decltype(get_persistent) *get_parallel_handler(_In_ ULONG IoControlCode)
         switch (IoControlCode) {
         case vhci::ioctl::GET_IMPORTED_DEVICES:
                 return get_imported_devices;
+        case vhci::ioctl::GET_DEVICE_OWNER_SESSION:
+                return get_device_owner_session;
         case vhci::ioctl::SET_PERSISTENT:
                 return set_persistent;
         case vhci::ioctl::GET_PERSISTENT:

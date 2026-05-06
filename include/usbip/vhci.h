@@ -84,6 +84,7 @@ enum class function { // 12 bit
         stop_attach_attempts,
         plugin_hardware_once,
         plugout_hardware_and_reattach,
+        get_device_owner_session,
 };
 
 constexpr auto make(function id)
@@ -100,6 +101,7 @@ enum {
         STOP_ATTACH_ATTEMPTS = make(function::stop_attach_attempts),
         PLUGIN_HARDWARE_ONCE = make(function::plugin_hardware_once),
         PLUGOUT_HARDWARE_AND_REATTACH = make(function::plugout_hardware_and_reattach), // for internal use only
+        GET_DEVICE_OWNER_SESSION = make(function::get_device_owner_session),
 };
 
 struct plugin_hardware : base, imported_device_location {};
@@ -117,6 +119,17 @@ struct plugout_hardware : base
 struct get_imported_devices : base
 {
         imported_device devices[ANYSIZE_ARRAY];
+};
+
+/*
+ * Report owner RDP session captured at PLUGIN_HARDWARE (for user-mode DEVPKEY_Device_SessionId stamping).
+ */
+struct get_device_owner_session : base
+{
+        int port; // IN
+
+        ULONG session_id; // OUT, meaningful when session_valid != 0
+        ULONG session_valid; // OUT, 1 = interactive owner session; 0 = shared / Session 0
 };
 
 constexpr auto get_imported_devices_size(_In_ ULONG n)

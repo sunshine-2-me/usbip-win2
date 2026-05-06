@@ -142,3 +142,11 @@ SymbolicName=USBIP_ERROR_DRIVER_RESPONSE
 Language=English
 Unexpected response from the driver (length, content, etc.).
 .
+
+MessageId=
+Severity=Error
+Facility=Library
+SymbolicName=USBIP_ERROR_SESSION_STAMP_FAILED
+Language=English
+Failed to set session isolation property on device nodes (rollback detach was attempted).
+.

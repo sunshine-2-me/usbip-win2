@@ -111,7 +111,10 @@ auto usbip::next_seqnum(_Inout_ device_ctx &dev, _In_ bool dir_in) -> seqnum_t
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
 PAGED NTSTATUS usbip::create_device_ctx_ext(
-        _Inout_ WDFMEMORY &ctx_ext, _In_ WDFOBJECT parent, _In_ const vhci::ioctl::plugin_hardware &r)
+        _Inout_ WDFMEMORY &ctx_ext,
+        _In_ WDFOBJECT parent,
+        _In_ const vhci::ioctl::plugin_hardware &r,
+        _In_ ULONG owner_session_id)
 {
         PAGED_CODE();
 
@@ -120,7 +123,15 @@ PAGED NTSTATUS usbip::create_device_ctx_ext(
         }
 
         auto &ext = get_device_ctx_ext(ctx_ext);
-        return init_device_attributes(ext.attr, r);
+        ext.owner_session_id = owner_session_id;
+        ext.owner_session_valid = owner_session_id != 0;
+
+        if (auto err = init_device_attributes(ext.attr, r)) {
+                return err;
+        }
+
+        Trace(TRACE_LEVEL_INFORMATION, "owner session %lu, valid %!bool!", owner_session_id, ext.owner_session_valid);
+        return STATUS_SUCCESS;
 }
 
 _IRQL_requires_same_
