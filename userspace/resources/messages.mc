@@ -142,3 +142,11 @@ SymbolicName=USBIP_ERROR_DRIVER_RESPONSE
 Language=English
 Unexpected response from the driver (length, content, etc.).
 .
+
+MessageId=
+Severity=Error
+Facility=Library
+SymbolicName=USBIP_ERROR_SECURITY_STAMP
+Language=English
+Unable to stamp device isolation security on the enumerated devnodes after attach (driver rolled back attach).
+.

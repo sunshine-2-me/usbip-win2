@@ -11,6 +11,7 @@
 #include "irp.h"
 #include "pnp.h"
 #include "int_dev_ctrl.h"
+#include "create.h"
 
 #include <libdrv\remove_lock.h>
 
@@ -70,6 +71,8 @@ CS_INIT EXTERN_C NTSTATUS DriverEntry(_In_ DRIVER_OBJECT *drvobj, _In_ UNICODE_S
 	for (int i = 0; i <= IRP_MJ_MAXIMUM_FUNCTION; ++i) {
 		drvobj->MajorFunction[i] = dispatch_lower;
 	}
+
+	drvobj->MajorFunction[IRP_MJ_CREATE] = dispatch_create;
 #pragma warning(pop)
 
 	drvobj->MajorFunction[IRP_MJ_PNP] = pnp;

@@ -39,6 +39,20 @@ The issue of this implementation is that the driver install/delete restarts all 
      dvi:                          Start: USB\ROOT_HUB30\4&62F4A8E&0&0
      dvi:                     {Restarting Devices exit} 11:10:05.453
 
+###
+
+User-account isolation for imported devices (OWNER SDDL stamping from libusbip + strict CREATE):
+- USER-based isolation attaches a discretionary ACL (DEVICE property DEVPKEY_Device_SecuritySDS) on the enumerated
+  devnodes matching the VID/PID under the usbip ROOT hub. The SDDL grants GA to SY / BA (built-in Administrators)
+  and the attaching interactive user SID captured synchronously during PLUGIN_HARDWARE in usbip2_ude.
+- Kernel-driven PLUGIN_HARDWARE_ONCE (reattach from Session 0) typically resolves to LOCAL SYSTEM /
+  NETWORK SERVICE tokens, so capture marks owner_sid invalid and stamping is skipped (device remains shared).
+- usbip2_filter exposes IRP_MJ_CREATE only on non-hub filter stacks and enforces access using the stamped SDDL :
+  DACL needles (A;;GA;;;<user sid string>), (A;;GA;;;BA), (A;;GA;;;SY). If the property is missing, CREATE is
+  forwarded (compatibility / unstamped devices).
+- Storage, HID on non-usbip filter stacks, and other class-specific upper stacks are not covered by this filter
+  alone; document limitations when claiming full-device isolation.
+
 If set HWID of particular USB Hub (f.e. USB\ROOT_HUB30&VID8086&PID15EC&REV0006),
 all hubs will be restarted anyway. See message "Restart required for any devices using this driver").
 

@@ -70,6 +70,25 @@ USBIP_API Handle open(_In_ bool overlapped = false);
  */
 USBIP_API std::optional<std::vector<imported_device>> get_imported_devices(_In_ HANDLE dev);
 
+struct device_owner_info
+{
+        bool owner_isolated{};
+        std::wstring sddl;
+        std::vector<unsigned char> sid;
+
+        constexpr auto valid() const { return owner_isolated; }
+};
+
+/**
+ * @param dev driver handle opened for IOCTL
+ * @param port hub port from attach (>= 1)
+ * @param ioctl_unsupported if non-null, set true when the driver rejects the IOCTL (old driver → caller may skip isolation)
+ */
+USBIP_API std::optional<device_owner_info> get_device_owner_info(
+        _In_ HANDLE dev,
+        _In_ int port,
+        _Out_opt_ bool *ioctl_unsupported = nullptr);
+
 /*
  * @see attach
  */

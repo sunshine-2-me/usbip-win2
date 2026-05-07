@@ -173,6 +173,7 @@
     <ClCompile Include="src\remote.cpp" />
     <ClCompile Include="src\strconv.cpp" />
     <ClCompile Include="src\usb_ids.cpp" />
+    <ClCompile Include="src\security_stamp.cpp" />
     <ClCompile Include="src\vhci.cpp" />
     <ClCompile Include="src\win_socket.cpp" />
   </ItemGroup>
@@ -193,6 +194,7 @@
     <ClInclude Include="src\output.h" />
     <ClInclude Include="src\strconv.h" />
     <ClInclude Include="src\usb_ids.h" />
+    <ClInclude Include="src\security_stamp.h" />
     <ClInclude Include="src\setupapi.h" />
     <ClInclude Include="vhci.h" />
     <ClInclude Include="win_handle.h" />

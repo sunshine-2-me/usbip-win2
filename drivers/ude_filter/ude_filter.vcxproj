@@ -113,7 +113,7 @@
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -135,7 +135,7 @@
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -157,7 +157,7 @@
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -179,7 +179,7 @@
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -196,6 +196,7 @@
     <ClCompile Include="driver.cpp" />
     <ClCompile Include="int_dev_ctrl.cpp" />
     <ClCompile Include="pnp.cpp" />
+    <ClCompile Include="create.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="query_interface.h" />
@@ -206,6 +207,7 @@
     <ClInclude Include="int_dev_ctrl.h" />
     <ClInclude Include="pnp.h" />
     <ClInclude Include="trace.h" />
+    <ClInclude Include="create.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\libdrv\libdrv.vcxproj">

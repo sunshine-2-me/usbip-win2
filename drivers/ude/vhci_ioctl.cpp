@@ -7,6 +7,7 @@
 #include "vhci_ioctl.tmh"
 
 #include "context.h"
+#include "security.h"
 #include "vhci.h"
 #include "device.h"
 #include "network.h"
@@ -547,7 +548,7 @@ PAGED auto plugin_hardware(
         ctx.request = request;
         ctx.one_attempt = once;
 
-        if (auto err = create_device_ctx_ext(ctx.ctx_ext, vhci, r)) {
+        if (auto err = create_device_ctx_ext(ctx.ctx_ext, vhci, r, request)) {
                 WdfObjectDelete(wi);
                 return err;
         }
@@ -711,6 +712,79 @@ PAGED NTSTATUS get_imported_devices(_In_ WDFREQUEST request)
         return STATUS_SUCCESS;
 }
 
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS get_device_owner_info(_In_ WDFREQUEST request)
+{
+        PAGED_CODE();
+        WdfRequestSetInformation(request, 0);
+
+        vhci::ioctl::get_device_owner_info *r{};
+
+        size_t outlen{};
+        if (auto err =
+                    WdfRequestRetrieveOutputBuffer(request, sizeof(*r), reinterpret_cast<PVOID *>(&r), &outlen)) {
+                return err;
+        } else if (outlen < sizeof(*r)) {
+                return STATUS_BUFFER_TOO_SMALL;
+        } else if (r->size != sizeof(*r)) {
+                Trace(TRACE_LEVEL_ERROR,
+                        "get_device_owner_info.size %lu != sizeof(get_device_owner_info) %Iu",
+                        r->size,
+                        sizeof(*r));
+                return USBIP_ERROR_ABI;
+        } else if (!r->port) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        auto vhci = get_vhci(request);
+
+        if (auto ctx = get_vhci_ctx(vhci); !is_valid_port(*ctx, r->port)) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        const ULONG size_abi = r->size;
+        const int port_in = r->port;
+
+        RtlZeroMemory(r, sizeof(*r));
+        r->size = size_abi;
+        r->port = port_in;
+
+        auto dev = vhci::get_device(vhci, r->port);
+        if (!dev) {
+                return STATUS_DEVICE_NOT_CONNECTED;
+        }
+
+        auto hdev = dev.get<UDECXUSBDEVICE>();
+        auto &ext = get_device_ctx(hdev)->ext();
+
+        if (!ext.owner_sid_valid) {
+                r->owner_valid = 0;
+                r->sid_length = 0;
+                r->sddl_length_chars = 0;
+                WdfRequestSetInformation(request, sizeof(*r));
+                return STATUS_SUCCESS;
+        }
+
+        r->owner_valid = 1;
+        r->sid_length = ext.owner_sid_length;
+
+        if (r->sid_length > sizeof(r->sid)) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        RtlCopyMemory(r->sid, ext.owner_sid, r->sid_length);
+
+        ULONG wchar_out{};
+        if (auto st = build_owner_sddl(ext, r->sddl, vhci::ioctl::USBIP_OWNER_SDDL_CCH_MAX, &wchar_out)) {
+                return st;
+        }
+
+        r->sddl_length_chars = wchar_out;
+        WdfRequestSetInformation(request, sizeof(*r));
+        return STATUS_SUCCESS;
+}
+
 /*
  * @see get_persistent_devices
  */
@@ -871,6 +945,8 @@ PAGED decltype(get_persistent) *get_parallel_handler(_In_ ULONG IoControlCode)
                 return get_persistent;
         case vhci::ioctl::STOP_ATTACH_ATTEMPTS:
                 return stop_attach_attempts;
+        case vhci::ioctl::GET_DEVICE_OWNER_INFO:
+                return get_device_owner_info;
         default:
                 return nullptr;
         }

@@ -25,6 +25,7 @@
     <ClInclude Include="device.h" />
     <ClInclude Include="network.h" />
     <ClInclude Include="urbtransfer.h" />
+    <ClInclude Include="security.h" />
     <ClInclude Include="context.h" />
     <ClInclude Include="wsk_receive.h" />
     <ClInclude Include="device_ioctl.h" />
@@ -46,6 +47,7 @@
     <ClCompile Include="device.cpp" />
     <ClCompile Include="network.cpp" />
     <ClCompile Include="urbtransfer.cpp" />
+    <ClCompile Include="security.cpp" />
     <ClCompile Include="context.cpp" />
     <ClCompile Include="wsk_receive.cpp" />
     <ClCompile Include="device_ioctl.cpp" />

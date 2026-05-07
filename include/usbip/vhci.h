@@ -15,6 +15,10 @@
   #include <winioctl.h>
 #endif
 
+#ifndef SECURITY_MAX_SID_SIZE
+#define SECURITY_MAX_SID_SIZE 68
+#endif
+
 #include "ch9.h"
 #include "consts.h"
 
@@ -84,6 +88,7 @@ enum class function { // 12 bit
         stop_attach_attempts,
         plugin_hardware_once,
         plugout_hardware_and_reattach,
+        get_device_owner_info,
 };
 
 constexpr auto make(function id)
@@ -100,7 +105,10 @@ enum {
         STOP_ATTACH_ATTEMPTS = make(function::stop_attach_attempts),
         PLUGIN_HARDWARE_ONCE = make(function::plugin_hardware_once),
         PLUGOUT_HARDWARE_AND_REATTACH = make(function::plugout_hardware_and_reattach), // for internal use only
+        GET_DEVICE_OWNER_INFO = make(function::get_device_owner_info),
 };
+
+inline constexpr ULONG USBIP_OWNER_SDDL_CCH_MAX = 384;
 
 struct plugin_hardware : base, imported_device_location {};
 
@@ -123,5 +131,23 @@ constexpr auto get_imported_devices_size(_In_ ULONG n)
 {
         return offsetof(get_imported_devices, devices) + n*sizeof(*get_imported_devices::devices);
 }
+
+/*
+ * Returned SDDL matches kernel/user stamping policy (SYSTEM, optionally BA, owner).
+ * @param sddl_length_chars OUT: WCHAR count including trailing NUL written to sddl[].
+ */
+struct get_device_owner_info : base
+{
+        int port; // IN: hub port assigned at attach completion
+
+        UCHAR owner_valid; // OUT
+        UCHAR _reserved[3];
+
+        ULONG sid_length; // OUT: bytes in sid[]
+        UCHAR sid[SECURITY_MAX_SID_SIZE];
+
+        ULONG sddl_length_chars; // OUT: WCHAR units including terminator
+        WCHAR sddl[USBIP_OWNER_SDDL_CCH_MAX];
+};
 
 } // namespace usbip::vhci::ioctl

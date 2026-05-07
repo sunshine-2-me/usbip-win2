@@ -6,6 +6,8 @@
 
 #include "device_speed.h"
 #include "output.h"
+#include "security_stamp.h"
+#include "strconv.h"
 
 #include <resources\messages.h>
 #include <cfgmgr32.h>
@@ -255,6 +257,70 @@ std::optional<std::vector<usbip::imported_device>> usbip::vhci::get_imported_dev
         return devices;
 }
 
+USBIP_API std::optional<vhci::device_owner_info> usbip::vhci::get_device_owner_info(
+        _In_ HANDLE dev,
+        _In_ int port,
+        _Out_opt_ bool *ioctl_unsupported)
+{
+        if (port <= 0) {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return {};
+        }
+
+        if (ioctl_unsupported) {
+                *ioctl_unsupported = false;
+        }
+
+        ioctl::get_device_owner_info r{};
+        r.size = sizeof(r);
+        r.port = port;
+
+        DWORD BytesReturned{};
+        if (!DeviceIoControl(
+                    dev,
+                    ioctl::GET_DEVICE_OWNER_INFO,
+                    &r,
+                    sizeof(r),
+                    &r,
+                    sizeof(r),
+                    &BytesReturned,
+                    nullptr)) {
+
+                const auto err = GetLastError();
+                if (ioctl_unsupported && (err == ERROR_INVALID_FUNCTION || err == ERROR_NOT_SUPPORTED)) {
+
+                        *ioctl_unsupported = true;
+                }
+
+                return {};
+        }
+
+        if (BytesReturned != sizeof(r)) [[unlikely]] {
+                SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
+                return {};
+        }
+
+        if (r.size != sizeof(r)) [[unlikely]] {
+                SetLastError(USBIP_ERROR_ABI);
+                return {};
+        }
+
+        device_owner_info out;
+        out.owner_isolated = r.owner_valid != 0;
+
+        if (out.owner_isolated) {
+                const auto nchar =
+                        r.sddl_length_chars > 1 ? static_cast<size_t>(r.sddl_length_chars - 1) : wcslen(r.sddl);
+                out.sddl.assign(r.sddl, nchar);
+        }
+
+        if (out.owner_isolated && r.sid_length) {
+                out.sid.assign(r.sid, r.sid + r.sid_length);
+        }
+
+        return out;
+}
+
 USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &location, _In_ unsigned long options)
 {
         if (options && options != ATTACH_ONCE) {
@@ -278,7 +344,58 @@ USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &l
                         SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
                 } else {
                         assert(r.port > 0);
-                        return r.port;
+                        const auto port = r.port;
+
+                        bool owner_ioctl_missing{};
+                        if (auto owner = get_device_owner_info(dev, port, &owner_ioctl_missing)) {
+
+                                if (owner->owner_isolated) {
+
+                                        if (owner->sddl.empty()) {
+                                                detach(dev, port);
+                                                SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
+                                                return 0;
+                                        }
+
+                                        auto imported = get_imported_devices(dev);
+                                        if (!imported) {
+                                                detach(dev, port);
+                                                return 0;
+                                        }
+
+                                        const usbip::imported_device *match{};
+                                        for (auto &e : *imported) {
+
+                                                if (e.port == port) {
+                                                        match = &e;
+                                                        break;
+                                                }
+                                        }
+
+                                        if (!match) {
+                                                detach(dev, port);
+                                                SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
+                                                return 0;
+                                        }
+
+                                        std::wstring err;
+                                        if (!stamp_imported_device_devnode_security(port, owner->sddl, *match, err)) {
+                                                libusbip::output("{}: {}", __func__, usbip::wchar_to_utf8_or_errmsg(err));
+                                                detach(dev, port);
+                                                SetLastError(USBIP_ERROR_SECURITY_STAMP);
+                                                return 0;
+                                        }
+                                }
+                        } else if (owner_ioctl_missing) {
+
+                                return port;
+                        } else {
+
+                                detach(dev, port);
+                                return 0;
+                        }
+
+                        return port;
                 }
         }
 

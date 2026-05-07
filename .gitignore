@@ -14,3 +14,6 @@ ARM64
 /userspace/resources/messages.rc
 /userspace/resources/MSG*.bin
 /userspace/wusbip/vcpkg_installed
+
+tmp/
+.cursor/
