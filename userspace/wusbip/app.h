@@ -12,6 +12,7 @@ public:
         App();
 
         bool OnInit() override;
+        int OnExit() override;
         void write_appearance(_In_ int val);
 
 private:

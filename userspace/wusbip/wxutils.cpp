@@ -5,32 +5,76 @@
 #include "wxutils.h"
 #include "utils.h"
 
+#include <algorithm>
+
+#include <wx/app.h>
 #include <wx/msgdlg.h>
 #include <wx/menu.h>
 #include <wx/log.h>
 
+#include <spdlog/spdlog.h>
+
+#include <string>
 #include <thread>
 
 namespace
 {
 
+inline std::string wx_u8(const wxString &s)
+{
+        return std::string(s.utf8_string());
+}
+
+/*
+ * Blocking the GUI thread on WaitForSingleObject alone never dispatches queued
+ * work (including wx App::CallAfter). Keep waits short or interleave wxYield
+ * when relying on cross-thread UI delivery.
+ */
 auto wait(_In_ HANDLE evt, _In_ DWORD timeout)
 {
-        bool ok{};
-
-        switch (auto ret = WaitForSingleObject(evt, timeout)) {
-        case WAIT_OBJECT_0:
-                ok = true;
-                break;
-        case WAIT_TIMEOUT:
-                break;
-        default:
-                wxASSERT(ret == WAIT_FAILED);
-                auto err = GetLastError();
-                wxLogVerbose(_("WaitForSingleObject error %lu\n%s"), err, wxSysErrorMsg(err));
+        if (!timeout) {
+                return WaitForSingleObject(evt, 0) == WAIT_OBJECT_0;
         }
 
-        return ok;
+        const auto start_ms = ::GetTickCount64();
+        for (;;) {
+                auto elapsed_ms = ::GetTickCount64() - start_ms;
+                if (elapsed_ms >= timeout) {
+                        return false;
+                }
+
+                const DWORD remaining = static_cast<DWORD>(timeout - elapsed_ms);
+                const DWORD slice = std::max<DWORD>(
+                        DWORD{1}, std::min<DWORD>(DWORD{50}, remaining));
+
+                const DWORD wait_ret =
+                        MsgWaitForMultipleObjects(1, &evt, FALSE, slice, QS_ALLINPUT);
+
+                MSG msg;
+                while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                        TranslateMessage(&msg);
+                        DispatchMessage(&msg);
+                }
+
+                if (wxAppConsole *const app = wxApp::GetInstance(); app != nullptr) {
+                        app->ProcessPendingEvents();
+                }
+
+                switch (wait_ret) {
+                case WAIT_OBJECT_0:
+                        return true;
+                case WAIT_FAILED: {
+                        DWORD err = GetLastError();
+                        // wxLogVerbose(_("MsgWaitForMultipleObjects error %lu\n%s"), err,
+                        //              wxSysErrorMsg(err));
+                        spdlog::info("{}", wx_u8(wxString::Format(_("MsgWaitForMultipleObjects error %lu\n%s"), err,
+                                                                 wxSysErrorMsg(err))));
+                        return false;
+                }
+                default:
+                        break;
+                }
+        }
 }
 
 } // namespace
@@ -70,7 +114,10 @@ wxMenuItem* clone_menu_item(_In_ wxMenu &dest, _In_ int item_id, _In_ const wxMe
 
 BOOL usbip::cancel_connect(_In_ HANDLE thread)
 {
-        return QueueUserAPC( [] (auto) { wxLogVerbose(L"APC"); }, thread, 0);
+        return QueueUserAPC([] (auto) {
+                // wxLogVerbose(L"APC");
+                spdlog::info("APC");
+        }, thread, 0);
 }
 
 /*
@@ -108,7 +155,8 @@ void usbip::run_cancellable(
                 try {
                         func();
                 } catch (std::exception &e) {
-                        wxLogVerbose(_("exception: %s"), what(e));
+                        // wxLogVerbose(_("exception: %s"), what(e));
+                        spdlog::info("exception: {}", wx_u8(what(e)));
                 }
 
                 [[maybe_unused]] auto ok = SetEvent(evt);
@@ -121,7 +169,7 @@ void usbip::run_cancellable(
 
         {
                 wxWindowDisabler wd; // ShowModal uses it too that creates issues
-                if (wait(evt.get(), 1'000)) { // use MsgWaitForMultipleObjects if GUI thread is blocked for a long time
+                if (wait(evt.get(), 1'000)) { // MsgWait + pump so CallAfter(libusbip::output) drains while worker runs
                         return;
                 }
         }
@@ -129,6 +177,8 @@ void usbip::run_cancellable(
         if (auto done = !dlg.ShowModal() || wait(evt.get(), 0); // wxID_OK if cancelled by user
             !(done || cancel(thread.native_handle()))) { // cancelled by user
                 auto err = GetLastError();
-                wxLogVerbose(_("Could not cancel '%s', error %lu\n%s"), caption, err, wxSysErrorMsg(err));
+                // wxLogVerbose(_("Could not cancel '%s', error %lu\n%s"), caption, err, wxSysErrorMsg(err));
+                spdlog::info("{}", wx_u8(wxString::Format(_("Could not cancel '%s', error %lu\n%s"), caption, err,
+                                                       wxSysErrorMsg(err))));
         }
 }

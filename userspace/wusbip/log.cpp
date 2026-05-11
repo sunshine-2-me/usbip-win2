@@ -5,12 +5,64 @@
 #include "log.h"
 #include "font.h"
 
+#include <common/log_format.h>
+#include <common/log_paths.h>
+
 #include <libusbip/output.h>
 
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/dist_sink.h>
+#include <spdlog/sinks/msvc_sink.h>
+
+#include <filesystem>
+#include <optional>
+#include <string>
+
 #include <wx/frame.h>
+#include <wx/log.h>
+#include <wx/settings.h>
+#include <wx/persist/toplevel.h>
 #include <wx/menuitem.h>
 #include <wx/textctrl.h>
 #include <wx/persist/toplevel.h>
+
+namespace
+{
+
+void log_record_to_spdlog(wxLogLevel level, const wxString &msg)
+{
+        const std::string u8(msg.utf8_string());
+        switch (level) {
+        case wxLOG_FatalError:
+        case wxLOG_Error:
+                spdlog::error("{}", u8);
+                break;
+        case wxLOG_Warning:
+                spdlog::warn("{}", u8);
+                break;
+        case wxLOG_Info:
+        case wxLOG_Message:
+        case wxLOG_Progress:
+        case wxLOG_Status:
+                spdlog::info("{}", u8);
+                break;
+        default:
+                spdlog::debug("{}", u8);
+                break;
+        }
+}
+
+class wxLogSpdlog final : public wxLog
+{
+public:
+        void DoLogRecord(wxLogLevel level, const wxString &msg, const wxLogRecordInfo &) override
+        {
+                log_record_to_spdlog(level, msg);
+        }
+};
+
+} // namespace
 
 LogWindow::LogWindow(
         _In_ wxWindow *parent, 
@@ -106,19 +158,23 @@ void LogWindow::set_accelerators(
 
 void LogWindow::DoLogRecord(_In_ wxLogLevel level, _In_ const wxString &msg, _In_ const wxLogRecordInfo &info)
 {
-        bool pass{};
-        auto verbose = level == wxLOG_Info;
+        // wxLogWindow UI disabled — wusbip uses spdlog file only.
+        // bool pass{};
+        // auto verbose = level == wxLOG_Info;
+        //
+        // if (verbose) {
+        //         pass = IsPassingMessages();
+        //         PassMessages(false);
+        // }
+        //
+        // wxLogWindow::DoLogRecord(level, msg, info);
+        //
+        // if (verbose) {
+        //         PassMessages(pass);
+        // }
 
-        if (verbose) {
-                pass = IsPassingMessages();
-                PassMessages(false);
-        }
-
-        wxLogWindow::DoLogRecord(level, msg, info);
-
-        if (verbose) {
-                PassMessages(pass);
-        }
+        (void)info;
+        log_record_to_spdlog(level, msg);
 }
 
 void LogWindow::change_font_size(_In_ int dir)
@@ -153,24 +209,61 @@ void LogWindow::on_mouse_wheel(_In_ wxMouseEvent &event)
         }
 }
 
-/*
- * wxLogXXX throws exception 'Incorrect format specifier' if use something like wxLogXXX(get_str()) 
- * and get_str() result contains '%'. 
- * wxLogVerbose(L"lib: " + wxString::FromUTF8(s)) can throw exception for this reason too.
- */
-void usbip::enable_library_log(_In_ bool enable)
+namespace
 {
-        libusbip::output_func_type f;
 
-        if (enable) {
-                f = [] (auto s) { wxLogVerbose(L"lib: %s", wxString::FromUTF8(s)); }; // see comments
+std::optional<std::filesystem::path> parse_libusbip_log_path_wx(int argc, wxChar **argv)
+{
+        for (int i = 1; i < argc; ++i) {
+                if (wxStrcmp(argv[i], wxS("--libusbip-log")) != 0) {
+                        continue;
+                }
+                if (i + 1 < argc && argv[i + 1][0] && argv[i + 1][0] != wxT('-')) {
+                        return std::filesystem::path(std::wstring(static_cast<const wchar_t *>(argv[i + 1])));
+                }
         }
-
-        libusbip::set_debug_output(f);
+        return std::nullopt;
 }
 
-bool usbip::is_library_log_enabled()
+} // namespace
+
+void usbip::init_wusbip_host_logging(int argc, wxChar **argv)
 {
-        auto &f = libusbip::get_debug_output();
-        return static_cast<bool>(f);
+        std::filesystem::path file_path;
+        if (const auto o = parse_libusbip_log_path_wx(argc, argv)) {
+                file_path = *o;
+        } else {
+                file_path = usbip::default_usbip_log_file("wusbip");
+        }
+
+        auto dist = std::make_shared<spdlog::sinks::dist_sink_mt>();
+        dist->add_sink(std::make_shared<spdlog::sinks::msvc_sink_mt>());
+        if (!file_path.empty()) {
+                try {
+                        dist->add_sink(std::make_shared<spdlog::sinks::basic_file_sink_mt>(file_path.string(), false));
+                } catch (...) {
+                }
+        }
+
+        auto logger = std::make_shared<spdlog::logger>("wusbip", dist);
+        logger->set_pattern(usbip::log_format_spdlog_pattern(true));
+        spdlog::set_default_logger(std::move(logger));
+        spdlog::set_level(spdlog::level::info);
+
+        libusbip::set_debug_output([](std::string msg) {
+                if (auto lg = spdlog::default_logger()) {
+                        lg->log(spdlog::level::info, "{}", msg);
+                }
+        });
+}
+
+void usbip::install_wx_log_for_spdlog()
+{
+        delete wxLog::SetActiveTarget(new wxLogSpdlog);
+}
+
+void usbip::shutdown_wusbip_host_logging()
+{
+        libusbip::set_debug_output({});
+        spdlog::shutdown();
 }

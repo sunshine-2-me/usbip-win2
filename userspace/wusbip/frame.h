@@ -119,8 +119,6 @@ class Frame : public wxFrame
 		virtual void on_log_show_update_ui( wxUpdateUIEvent& event ) = 0;
 		virtual void on_log_verbose( wxCommandEvent& event ) = 0;
 		virtual void on_log_verbose_update_ui( wxUpdateUIEvent& event ) = 0;
-		virtual void on_log_library( wxCommandEvent& event ) = 0;
-		virtual void on_log_library_update_ui( wxUpdateUIEvent& event ) = 0;
 		virtual void on_help_about( wxCommandEvent& event ) = 0;
 		virtual void on_help_about_lib( wxCommandEvent& event ) = 0;
 		virtual void on_item_activated( wxTreeListEvent& event ) = 0;

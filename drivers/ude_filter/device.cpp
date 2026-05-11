@@ -53,6 +53,11 @@ PAGED void do_destroy(_Inout_ filter_ext &f)
 		auto &dev = f.device;
 		NT_ASSERT(!dev.usbd_handle); // @see IRP_MN_REMOVE_DEVICE
 
+		if (auto sid = dev.owner_sid) {
+			ExFreePoolWithTag(sid, pooltag);
+			dev.owner_sid = nullptr;
+		}
+
 		if (auto lck = dev.parent_remove_lock) {
 			IoReleaseRemoveLock(lck, 0);
 		}

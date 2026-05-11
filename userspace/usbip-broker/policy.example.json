@@ -1,0 +1,30 @@
+{
+  // Per-user USB/IP attach policy.
+  //
+  // "users" maps a string SID ("S-1-5-21-...") to a list of devices the user
+  // is allowed to attach. Each device is identified by (host, service, busid)
+  // exactly as it would be passed to `usbip attach`.
+  //
+  // Runtime ownership ("first successful attach owns the tuple until detach")
+  // is tracked separately in %ProgramData%\USBip\owners.json by usbip-broker.
+  //
+  // "deny_classes" is optional; entries are USB device class names. A device
+  // whose class matches will be refused even if the busid is allowed. The
+  // current broker recognises "HID" and "MASS" (mass storage); see Phase 9.
+  //
+  // Use the empty form `"users": {}` to deny everyone (the default after a
+  // fresh install).
+  "users": {
+    // "S-1-5-21-1234567890-1234567890-1234567890-1001": [
+    //   {
+    //     "host":         "192.168.1.9",
+    //     "service":      "3240",
+    //     "busid":        "3-2",
+    //     "deny_classes": ["HID"]
+    //   }
+    // ],
+    // "S-1-5-21-1234567890-1234567890-1234567890-1002": [
+    //   { "host": "192.168.1.9", "service": "3240", "busid": "3-3" }
+    // ]
+  }
+}

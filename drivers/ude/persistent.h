@@ -41,7 +41,8 @@ PAGED void plugin_persistent_devices(_In_ WDFDEVICE vhci);
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
 PAGED void start_attach_attempts(
-        _In_ WDFDEVICE vhci, _Inout_ vhci_ctx &vctx, _In_ const device_attributes &attr, _In_ bool delayed = false);
+        _In_ WDFDEVICE vhci, _Inout_ vhci_ctx &vctx, _In_ const device_attributes &attr, _In_ bool delayed = false,
+        _In_reads_bytes_opt_(sid_size) PSID owner_sid = nullptr, _In_ ULONG sid_size = 0);
 
 _IRQL_requires_same_
 _IRQL_requires_max_(DISPATCH_LEVEL)

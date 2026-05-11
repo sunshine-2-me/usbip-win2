@@ -100,6 +100,18 @@ MinVersion=10.0.18362
 [Messages]
 WelcomeLabel2=This will install [name/ver] on your computer.
 
+; C:\temp\usbip\logs — default spdlog directory (userspace/common/log_paths.cpp).
+; ACL on C:\temp\usbip and C:\temp\usbip\logs: SYSTEM, Administrators, Everyone = full control (OI)(CI) so any user can read/write logs.
+[Dirs]
+Name: "C:\temp\usbip"; Components: main
+Name: "C:\temp\usbip\logs"; Components: main
+
+[Registry]
+; Enable usbip-broker debug logging globally via environment variable
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
+    ValueType: string; ValueName: "USBIP_BROKER_DEBUG"; ValueData: "1"; \
+    Flags: preservestringtype uninsdeletevalue; Components: main
+
 [Components]
 Name: "main"; Description: "Main Files"; Types: full compact custom; Flags: fixed
 Name: "client"; Description: "Client"; Types: full compact custom; Flags: fixed
@@ -133,6 +145,10 @@ Source: {#BuildDir + "libusbip.pdb"}; DestDir: "{app}"; Components: pdb or sdk
 
 Source: {#BuildDir + "wusbip.exe"}; DestDir: "{app}"; Components: gui
 
+Source: {#BuildDir + "usbip-broker.exe"}; DestDir: "{app}"; Components: main
+Source: {#SolutionDir + "userspace\usbip-broker\policy.example.json"}; DestDir: "{app}"; Flags: ignoreversion; Components: main
+Source: {#SolutionDir + "userspace\usbip-broker\owners.example.json"}; DestDir: "{app}"; Flags: ignoreversion; Components: main
+
 Source: {#VCToolsRedistInstallDir}{#VCToolsRedistExe}; DestDir: "{tmp}"; Flags: nocompression; Components: main
 Source: {#BuildDir + "package\*"}; DestDir: "{tmp}"; Components: main
 
@@ -143,6 +159,10 @@ Source: {#BuildDir + "package\*"}; DestDir: "{tmp}"; Components: main
 [Tasks]
 Name: vcredist; Description: "Install Microsoft Visual C++ &Redistributable(x64)"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Components: gui
+; Checked by default: required on multi-session / RDS hosts so Windows does not
+; auto-assign the same removable volume in every user session (Explorer).
+; Single-user dev: uncheck to leave default Windows automount behavior.
+Name: usbipbroker_automount; Description: "Disable &global volume automount (mountvol /N) for per-session drive letters"; GroupDescription: "USBip Broker (RDS per-user isolation)"
 
 [Run]
 
@@ -155,7 +175,18 @@ Filename: {tmp}\{#VCToolsRedistExe}; Parameters: "/quiet /norestart"; Tasks: vcr
 Filename: {sys}\pnputil.exe; Parameters: "/add-driver {tmp}\{#FilterDriver}.inf /install"; Flags: runhidden; Components: client
 Filename: {app}\devnode.exe; Parameters: "install {tmp}\{#UdeDriver}.inf {#CLIENT_HWID}"; Flags: runhidden; Components: client
 
+Filename: "{cmd}"; Parameters: "/c mkdir ""{commonappdata}\USBip"" 2>nul"; Flags: runhidden; Components: main
+Filename: "{cmd}"; Parameters: "/c icacls ""C:\temp\usbip"" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F /grant:r *S-1-5-32-544:(OI)(CI)F /grant:r *S-1-1-0:(OI)(CI)F & icacls ""C:\temp\usbip\logs"" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F /grant:r *S-1-5-32-544:(OI)(CI)F /grant:r *S-1-1-0:(OI)(CI)F"; Flags: runhidden; Components: main
+Filename: "{cmd}"; Parameters: "/c if not exist ""{commonappdata}\USBip\policy.json"" copy /y ""{app}\policy.example.json"" ""{commonappdata}\USBip\policy.json"""; Flags: runhidden; Components: main
+Filename: "{cmd}"; Parameters: "/c if not exist ""{commonappdata}\USBip\owners.json"" copy /y ""{app}\owners.example.json"" ""{commonappdata}\USBip\owners.json"""; Flags: runhidden; Components: main
+Filename: "{cmd}"; Parameters: "/c icacls ""{commonappdata}\USBip\policy.json"" /inheritance:r /grant:r *S-1-5-18:(F) /grant:r *S-1-5-32-544:(F) /grant:r *S-1-5-11:(R)"; Flags: runhidden; Components: main
+Filename: "{cmd}"; Parameters: "/c icacls ""{commonappdata}\USBip\owners.json"" /inheritance:r /grant:r *S-1-5-18:(F) /grant:r *S-1-5-32-544:(F) /grant:r *S-1-5-11:(R)"; Flags: runhidden; Components: main
+Filename: "{app}\usbip-broker.exe"; Parameters: "--install"; Flags: runhidden waituntilterminated; Components: main
+Filename: "{sys}\mountvol.exe"; Parameters: "/N"; Flags: runhidden; Tasks: usbipbroker_automount
+
 [UninstallRun]
+
+Filename: "{app}\usbip-broker.exe"; Parameters: "--uninstall"; Flags: runhidden; RunOnceId: "UsbipBrokerUninst"
 
 Filename: {app}\devnode.exe; Parameters: "remove {#CLIENT_HWID} root"; Flags: runhidden
 

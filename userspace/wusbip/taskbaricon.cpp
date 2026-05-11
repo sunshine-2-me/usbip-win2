@@ -7,6 +7,10 @@
 #include "app.h"
 #include "wxutils.h"
 
+#include <spdlog/spdlog.h>
+
+#include <string>
+
 #include <wx/menu.h>
 #include <wx/window.h>
 
@@ -81,7 +85,8 @@ void TaskBarIcon::on_left_dclick(wxTaskBarIconEvent&)
 
 void TaskBarIcon::show_balloon(_In_ const wxString &text, _In_ int flags)
 {
-        wxLogVerbose(_("Balloon '%s', cancel %d"), text, m_cancel);
+        // wxLogVerbose(_("Balloon '%s', cancel %d"), text, m_cancel);
+        spdlog::info("{}", std::string(wxString::Format(_("Balloon '%s', cancel %d"), text, m_cancel).utf8_string()));
 
         if (m_cancel) {
                 auto ok = ShowBalloon(wxEmptyString, wxEmptyString, 0, 0); 

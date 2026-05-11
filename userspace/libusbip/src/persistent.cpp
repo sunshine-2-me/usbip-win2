@@ -32,8 +32,11 @@ std::expected<std::wstring, DWORD> make_multi_sz(_In_ const std::vector<device_l
                         return std::unexpected(ERROR_INVALID_PARAMETER);
                 }
 
-                if (auto s = std::format("{},{},{}", i.hostname, i.service, i.busid);
-                    auto ws = utf8_to_wchar(s)) {
+                auto s = i.owner_sid.empty() ?
+                        std::format("{},{},{}", i.hostname, i.service, i.busid) :
+                        std::format("{},{},{};sid={}", i.hostname, i.service, i.busid, i.owner_sid);
+
+                if (auto ws = utf8_to_wchar(s)) {
                         *ws += L'\0';
                         multi_sz += *ws;
                 } else {
@@ -64,6 +67,12 @@ auto parse_device_location(_In_ const std::string &str)
                                 dl.busid.assign((*i).data(), &str.back() + 1); // tail
                         }
                 }
+        }
+
+        // Per-user isolation: split out optional ";sid=..." suffix from busid.
+        if (auto pos = dl.busid.find(";sid="); pos != std::string::npos) {
+                dl.owner_sid = dl.busid.substr(pos + 5);
+                dl.busid.resize(pos);
         }
 
         return dl;

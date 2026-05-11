@@ -2,6 +2,8 @@
  * Copyright (c) 2023-2026 Vadym Hrynchyshyn <vadimgrn@gmail.com>
  */
 
+#include <ntifs.h>
+
 #include "persistent.h"
 #include "trace.h"
 #include "persistent.tmh"
@@ -35,6 +37,11 @@ struct attach_ctx
 
         unsigned int retry_cnt;
         unsigned int delay;
+
+        // Per-user isolation. If non-zero, inbuf is sized for
+        // vhci::ioctl::plugin_hardware_for_user instead of plugin_hardware
+        // and the issuing IOCTL is PLUGIN_HARDWARE_FOR_USER.
+        bool for_user;
 };
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(attach_ctx, get_attach_ctx);
 
@@ -162,13 +169,117 @@ PAGED auto get_persistent_devices(_Inout_ ULONG &cnt, _In_ ULONG max_cnt)
 }
 
 /*
+ * Parse the textual representation of a SID ("S-1-5-21-..."/"S-1-5-18"/...) into
+ * a self-relative SID stored in @a buf. Self-contained kernel implementation;
+ * no advapi32 equivalent exists in kernel mode.
+ *
+ * @param str  null-terminated wide string (NOT a UNICODE_STRING; first non-digit
+ *             after the trailing sub-authority terminates the parse)
+ * @param buf  caller-owned buffer of at least SECURITY_MAX_SID_SIZE bytes
+ * @param buf_size  size of @a buf in bytes
+ * @param out_size  receives RtlLengthSid(buf) on success
+ */
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS parse_string_sid(
+        _In_ PCWSTR str, _Out_writes_bytes_(buf_size) PSID buf,
+        _In_ ULONG buf_size, _Out_ ULONG &out_size)
+{
+        PAGED_CODE();
+        out_size = 0;
+
+        if (!str || str[0] != L'S' || str[1] != L'-' || str[2] != L'1' || str[3] != L'-') {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        auto p = str + 4;
+
+        // Authority: decimal up to 2^32-1 or hex 0x... up to 2^48-1.
+        ULONG64 auth = 0;
+        if (p[0] == L'0' && (p[1] == L'x' || p[1] == L'X')) {
+                p += 2;
+                while (*p && *p != L'-') {
+                        ULONG digit;
+                        if (*p >= L'0' && *p <= L'9') digit = *p - L'0';
+                        else if (*p >= L'a' && *p <= L'f') digit = 10 + (*p - L'a');
+                        else if (*p >= L'A' && *p <= L'F') digit = 10 + (*p - L'A');
+                        else return STATUS_INVALID_PARAMETER;
+                        auth = auth * 16 + digit;
+                        ++p;
+                }
+        } else {
+                while (*p && *p != L'-') {
+                        if (*p < L'0' || *p > L'9') return STATUS_INVALID_PARAMETER;
+                        auth = auth * 10 + (*p - L'0');
+                        ++p;
+                }
+        }
+
+        SID_IDENTIFIER_AUTHORITY id_auth{};
+        for (int i = 5; i >= 0; --i) {
+                id_auth.Value[i] = static_cast<UCHAR>(auth & 0xFF);
+                auth >>= 8;
+        }
+
+        ULONG sub_auths[SID_MAX_SUB_AUTHORITIES]{};
+        UCHAR sub_count = 0;
+
+        while (*p == L'-') {
+                ++p;
+                if (sub_count >= SID_MAX_SUB_AUTHORITIES) {
+                        return STATUS_INVALID_PARAMETER;
+                }
+                if (*p < L'0' || *p > L'9') return STATUS_INVALID_PARAMETER;
+
+                ULONG sub = 0;
+                while (*p >= L'0' && *p <= L'9') {
+                        sub = sub * 10 + (*p - L'0');
+                        ++p;
+                }
+                sub_auths[sub_count++] = sub;
+        }
+
+        if (*p != L'\0' || !sub_count) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        auto required = RtlLengthRequiredSid(sub_count);
+        if (buf_size < required) {
+                return STATUS_BUFFER_TOO_SMALL;
+        }
+
+        if (NTSTATUS st = RtlInitializeSid(buf, &id_auth, sub_count); !NT_SUCCESS(st)) {
+                return st;
+        }
+
+        for (UCHAR i = 0; i < sub_count; ++i) {
+                *RtlSubAuthoritySid(buf, i) = sub_auths[i];
+        }
+
+        if (!RtlValidSid(buf)) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        out_size = RtlLengthSid(buf);
+        return STATUS_SUCCESS;
+}
+
+/*
  * @param r must be zeroed
- * @param device_str host,port,busid
+ * @param device_str host,port,busid[;sid=<sid_string>]
+ * @param sid_buf optional, receives the parsed self-relative SID (must be at least
+ *                SECURITY_MAX_SID_SIZE bytes). On success *sid_size is set.
+ *                If absent, an embedded ;sid=... suffix is rejected as invalid.
  * @see hash_location
  */
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
-PAGED auto parse_device_str(_Inout_ device_attributes &r, _In_ const UNICODE_STRING &device_str)
+PAGED auto parse_device_str(
+        _Inout_ device_attributes &r,
+        _In_ const UNICODE_STRING &device_str,
+        _Out_writes_bytes_opt_(sid_buf_size) PSID sid_buf = nullptr,
+        _In_ ULONG sid_buf_size = 0,
+        _Out_opt_ ULONG *sid_size = nullptr)
 {
         PAGED_CODE();
         const auto sep = L',';
@@ -180,14 +291,87 @@ PAGED auto parse_device_str(_Inout_ device_attributes &r, _In_ const UNICODE_STR
 
         libdrv::split(r.service_name, r.busid, r.busid, sep);
 
-        return  empty(r.service_name) || empty(r.busid) ? STATUS_INVALID_PARAMETER :
-                hash_location(r.location_hash, r);
+        if (empty(r.service_name) || empty(r.busid)) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        // Per-user isolation: optional ;sid=S-1-5-... suffix in busid.
+        if (sid_size) {
+                *sid_size = 0;
+        }
+
+        const wchar_t tag[] = L";sid=";
+        const USHORT tag_chars = ARRAYSIZE(tag) - 1;
+        const auto busid_chars = static_cast<USHORT>(r.busid.Length / sizeof(wchar_t));
+
+        USHORT sid_at = 0;
+        bool found = false;
+        if (r.busid.Buffer && busid_chars >= tag_chars) {
+                for (USHORT i = 0; i + tag_chars <= busid_chars; ++i) {
+                        if (RtlCompareMemory(r.busid.Buffer + i, tag,
+                                              tag_chars * sizeof(wchar_t)) == tag_chars * sizeof(wchar_t)) {
+                                sid_at = i;
+                                found = true;
+                                break;
+                        }
+                }
+        }
+
+        if (found) {
+                if (!sid_buf) {
+                        return STATUS_INVALID_PARAMETER;
+                }
+
+                auto chars_after = static_cast<USHORT>(busid_chars - sid_at - tag_chars);
+
+                wchar_t sid_str[96]{};
+                if (chars_after >= ARRAYSIZE(sid_str)) {
+                        return STATUS_INVALID_PARAMETER;
+                }
+
+                RtlCopyMemory(sid_str,
+                              r.busid.Buffer + sid_at + tag_chars,
+                              chars_after * sizeof(wchar_t));
+                sid_str[chars_after] = L'\0';
+
+                ULONG cb = 0;
+                if (auto err = parse_string_sid(sid_str, sid_buf, sid_buf_size, cb); NT_ERROR(err)) {
+                        Trace(TRACE_LEVEL_ERROR, "parse_string_sid('%S') %!STATUS!", sid_str, err);
+                        return err;
+                }
+
+                if (sid_size) {
+                        *sid_size = cb;
+                }
+
+                // Trim ;sid=... off busid in-place.
+                r.busid.Length = sid_at * sizeof(wchar_t);
+                r.busid.MaximumLength = r.busid.Length;
+        }
+
+        return hash_location(r.location_hash, r);
 }
 
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
 PAGED bool create_inbuf(
         _Inout_ WDFMEMORY &result, _Inout_ vhci::ioctl::plugin_hardware* &req, _Inout_ WDF_OBJECT_ATTRIBUTES &attr)
+{
+        PAGED_CODE();
+        NT_ASSERT(!result);
+
+        if (auto err = WdfMemoryCreate(&attr, NonPagedPoolNx, 0, sizeof(*req), &result, reinterpret_cast<PVOID*>(&req))) {
+                Trace(TRACE_LEVEL_ERROR, "WdfMemoryCreate %!STATUS!", err);
+                req = nullptr;
+        }
+
+        return req;
+}
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED bool create_inbuf_for_user(
+        _Inout_ WDFMEMORY &result, _Inout_ vhci::ioctl::plugin_hardware_for_user* &req, _Inout_ WDF_OBJECT_ATTRIBUTES &attr)
 {
         PAGED_CODE();
         NT_ASSERT(!result);
@@ -209,6 +393,23 @@ PAGED bool create_outbuf(
         NT_ASSERT(!result);
 
         constexpr auto len = offsetof(vhci::ioctl::plugin_hardware, port) + sizeof(req->port);
+
+        if (auto err = WdfMemoryCreatePreallocated(&attr, req, len, &result)) {
+                Trace(TRACE_LEVEL_ERROR, "WdfMemoryCreatePreallocated %!STATUS!", err);
+        }
+
+        return result;
+}
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED bool create_outbuf_for_user(
+        _Inout_ WDFMEMORY &result, _In_ vhci::ioctl::plugin_hardware_for_user *req, _Inout_ WDF_OBJECT_ATTRIBUTES &attr)
+{
+        PAGED_CODE();
+        NT_ASSERT(!result);
+
+        constexpr auto len = offsetof(vhci::ioctl::plugin_hardware_for_user, port) + sizeof(req->port);
 
         if (auto err = WdfMemoryCreatePreallocated(&attr, req, len, &result)) {
                 Trace(TRACE_LEVEL_ERROR, "WdfMemoryCreatePreallocated %!STATUS!", err);
@@ -271,10 +472,19 @@ void send_plugin_hardware(
         _In_ WDFIOTARGET target, _In_ WDFMEMORY inbuf, _In_ WDFMEMORY outbuf, _Inout_ ObjectDelete &req)
 {
         auto request = req.get<WDFREQUEST>();
-        TraceDbg("req %04x", ptr04x(request));
+        auto &r = *get_attach_ctx(request);
+        TraceDbg("req %04x, for_user %!BOOLEAN!", ptr04x(request), r.for_user);
+
+        // Persistent reattach with an explicit owner SID uses the dedicated
+        // PLUGIN_HARDWARE_FOR_USER IOCTL. The kernel-issued request is treated
+        // as LocalSystem by the dispatcher, which is the only caller allowed to
+        // use that IOCTL. Without an SID we use PLUGIN_HARDWARE_ONCE which
+        // captures the System token of the kernel-side caller (legacy / admin).
+        auto code = r.for_user ? vhci::ioctl::PLUGIN_HARDWARE_FOR_USER
+                               : vhci::ioctl::PLUGIN_HARDWARE_ONCE;
 
         if (auto err = WdfIoTargetFormatRequestForIoctl(target, request,
-                        vhci::ioctl::PLUGIN_HARDWARE_ONCE, inbuf, nullptr, outbuf, nullptr)) {
+                        code, inbuf, nullptr, outbuf, nullptr)) {
                 Trace(TRACE_LEVEL_ERROR, "WdfIoTargetFormatRequestForIoctl %!STATUS!", err);
                 return;
         }
@@ -331,7 +541,12 @@ PAGED bool create_timer(_Inout_ WDFTIMER &result, _Inout_ WDF_OBJECT_ATTRIBUTES 
 
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
-PAGED auto init_attach_ctx(_Inout_ vhci_ctx &vhci, _Inout_ attach_ctx &r, _In_ const device_attributes &attr)
+PAGED auto init_attach_ctx(
+        _Inout_ vhci_ctx &vhci,
+        _Inout_ attach_ctx &r,
+        _In_ const device_attributes &attr,
+        _In_reads_bytes_opt_(sid_size) PSID owner_sid,
+        _In_ ULONG sid_size)
 {
         PAGED_CODE();
 
@@ -341,6 +556,23 @@ PAGED auto init_attach_ctx(_Inout_ vhci_ctx &vhci, _Inout_ attach_ctx &r, _In_ c
         r.delay = vhci.reattach_first_delay;
 
         size_t len;
+        if (r.for_user) {
+                auto &req = *static_cast<vhci::ioctl::plugin_hardware_for_user*>(WdfMemoryGetBuffer(r.inbuf, &len));
+                NT_ASSERT(len == sizeof(req));
+
+                RtlZeroMemory(&req, sizeof(req));
+                req.size = sizeof(req);
+
+                if (sid_size && sid_size <= sizeof(req.sid) && owner_sid) {
+                        RtlCopyMemory(req.sid, owner_sid, sid_size);
+                        req.sid_size = sid_size;
+                } else {
+                        return false;
+                }
+
+                return NT_SUCCESS(fill_location(req, attr));
+        }
+
         auto &req = *static_cast<vhci::ioctl::plugin_hardware*>(WdfMemoryGetBuffer(r.inbuf, &len));
         NT_ASSERT(len == sizeof(req));
 
@@ -366,7 +598,12 @@ PAGED void cleanup_attach_request(_In_ WDFOBJECT obj)
 
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
-PAGED auto create_attach_request(_In_ WDFDEVICE vhci, _In_ vhci_ctx &ctx, _In_ const device_attributes &dev)
+PAGED auto create_attach_request(
+        _In_ WDFDEVICE vhci,
+        _In_ vhci_ctx &ctx,
+        _In_ const device_attributes &dev,
+        _In_reads_bytes_opt_(sid_size) PSID owner_sid,
+        _In_ ULONG sid_size)
 {
         PAGED_CODE();
 
@@ -380,22 +617,33 @@ PAGED auto create_attach_request(_In_ WDFDEVICE vhci, _In_ vhci_ctx &ctx, _In_ c
                 return req;
         }
 
-        Trace(TRACE_LEVEL_INFORMATION, "%04x, %!USTR!:%!USTR!/%!USTR!, hash %lx",
-                ptr04x(req.get()), &dev.node_name, &dev.service_name, &dev.busid, dev.location_hash);
+        Trace(TRACE_LEVEL_INFORMATION, "%04x, %!USTR!:%!USTR!/%!USTR!, hash %lx, sid_size %lu",
+                ptr04x(req.get()), &dev.node_name, &dev.service_name, &dev.busid, dev.location_hash, sid_size);
 
         auto &r = *get_attach_ctx(req.get());
         r.vhci = vhci;
-
-        vhci::ioctl::plugin_hardware *buf{};
+        r.for_user = (owner_sid && sid_size);
 
         WDF_OBJECT_ATTRIBUTES_INIT(&attr);
         attr.ParentObject = req.get();
 
-        auto ok = create_inbuf(r.inbuf, buf, attr) &&
-                  create_outbuf(r.outbuf, buf, attr) &&
-                  create_timer(r.timer, attr) &&
-                  init_attach_ctx(ctx, r, dev) &&
-                  reattach_req_add(ctx, req.get());
+        bool ok = false;
+
+        if (r.for_user) {
+                vhci::ioctl::plugin_hardware_for_user *buf{};
+                ok = create_inbuf_for_user(r.inbuf, buf, attr) &&
+                     create_outbuf_for_user(r.outbuf, buf, attr) &&
+                     create_timer(r.timer, attr) &&
+                     init_attach_ctx(ctx, r, dev, owner_sid, sid_size) &&
+                     reattach_req_add(ctx, req.get());
+        } else {
+                vhci::ioctl::plugin_hardware *buf{};
+                ok = create_inbuf(r.inbuf, buf, attr) &&
+                     create_outbuf(r.outbuf, buf, attr) &&
+                     create_timer(r.timer, attr) &&
+                     init_attach_ctx(ctx, r, dev, nullptr, 0) &&
+                     reattach_req_add(ctx, req.get());
+        }
 
         if (!ok) {
                 req.reset();
@@ -437,7 +685,8 @@ PAGED decltype(WdfDriverOpenParametersRegistryKey) *get_function(_In_ DRIVER_REG
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
 PAGED void usbip::start_attach_attempts(
-        _In_ WDFDEVICE vhci, _Inout_ vhci_ctx &ctx, _In_ const device_attributes &attr, _In_ bool delayed)
+        _In_ WDFDEVICE vhci, _Inout_ vhci_ctx &ctx, _In_ const device_attributes &attr, _In_ bool delayed,
+        _In_reads_bytes_opt_(sid_size) PSID owner_sid, _In_ ULONG sid_size)
 {
         PAGED_CODE();
 
@@ -445,7 +694,7 @@ PAGED void usbip::start_attach_attempts(
                 TraceDbg("vhci is being removing");
         } else if (auto cnt = reattach_req_count(ctx); cnt >= 4*static_cast<ULONG>(ctx.devices_cnt)) {
                 Trace(TRACE_LEVEL_WARNING, "too many active attach requests, %lu", cnt);
-        } else if (auto req = create_attach_request(vhci, ctx, attr); !req) {
+        } else if (auto req = create_attach_request(vhci, ctx, attr, owner_sid, sid_size); !req) {
                 //
         } else if (auto &r = *get_attach_ctx(req.get()); !delayed) {
                 send_plugin_hardware(ctx.target_self, r.inbuf, r.outbuf, req);
@@ -506,10 +755,20 @@ PAGED void usbip::plugin_persistent_devices(_In_ WDFDEVICE vhci)
                 UNICODE_STRING device_str;
                 WdfStringGetUnicodeString(str, &device_str);
 
-                if (device_attributes attr{}; auto err = parse_device_str(attr, device_str)) {
+                // Per-user isolation: persistent record may carry trailing ;sid=...
+                // Stack-allocated buffer is zeroed and used only for this iteration.
+                UCHAR sid_buf[SECURITY_MAX_SID_SIZE]{};
+                ULONG sid_size = 0;
+
+                if (device_attributes attr{}; auto err = parse_device_str(
+                                attr, device_str, sid_buf,
+                                static_cast<ULONG>(sizeof(sid_buf)), &sid_size)) {
                         Trace(TRACE_LEVEL_ERROR, "parse_device_str(%!USTR!) %!STATUS!", &device_str, err);
                 } else {
-                        start_attach_attempts(vhci, ctx, attr);
+                        start_attach_attempts(vhci, ctx, attr,
+                                              false /* delayed */,
+                                              sid_size ? sid_buf : nullptr,
+                                              sid_size);
                 }
         }
 }

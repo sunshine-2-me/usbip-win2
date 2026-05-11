@@ -12,7 +12,8 @@
 namespace libusbip
 {
 
-inline output_func_type output_function;
+/* Single instance in output.cpp (DLL); avoids per-TU inline copies that break set_debug_output. */
+extern output_func_type output_function;
 
 template<typename... Args>
 inline void output(std::string_view fmt, Args&&... args)

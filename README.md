@@ -130,6 +130,49 @@ successfully attached to port 1
 ```
 port 1 is successfully detached
 ```
+### Test USB isolation (per-user access)
+- Goal: ensure that a USB/IP device attached by one user is denied for other users.
+- Prerequisites
+  - Install USBip with `usbip-broker` service enabled.
+  - `usbip.exe` and `wusbip.exe` open the VHCI driver **only through usbip-broker** by default (policy and impersonation). **Elevated** processes (for example Run as administrator, full UAC elevation) open VHCI **directly** and bypass broker policy for attach. For debugging from a non-elevated account, set `USBIP_ALLOW_DIRECT_VHCI=1` for that process (same escape hatch as before).
+  - Policy file `%ProgramData%\USBip\policy.json`: on first attach, the broker **learns** the `(host, service, busid)` tuple for the caller’s SID and persists it. If the tuple is already bound to **another** SID, attach is denied. You can still pre-seed or edit rules manually (see `userspace/usbip-broker/policy.example.json`). Any `//` or `/* */` comments in the file are accepted on **read** only; when the broker rewrites the file after an auto-grant, it writes strict JSON **without** comments.
+  - Runtime ownership is maintained automatically in `%ProgramData%\USBip\owners.json` by `usbip-broker`.
+  - Have at least two Windows user accounts (for example: UserA and UserB).
+- Test steps
+  - Sign in as UserA (non-admin), run:
+    - `usbip.exe list -r <usbip server ip>`
+    - `usbip.exe attach -r <usbip server ip> -b <busid>`
+  - Verify the device works in UserA session (for example, appears in Device Manager and can be opened by an app).
+  - Sign out UserA (or keep session disconnected), then sign in as UserB.
+  - In UserB session, verify access is blocked:
+    - Existing attached device should not be usable by UserB.
+    - A direct open attempt from UserB should fail with access denied semantics.
+  - Return to UserA and verify the device is still usable for the owner session.
+- Optional negative/positive checks
+  - Detach in UserA, then attach the same busid in UserB; UserB should become the new owner.
+  - Reattach persistence check: if persistent attach is enabled, reconnect/reboot and verify ownership is still enforced.
+- Cleanup
+  - `usbip.exe detach -all`
+  - Remove temporary policy edits if any. If `usbip2_filter` never received a resolved USB PDO instance id for a device (no volume and post-enumeration did not match), a filter row may linger until reboot or manual cleanup; successful detach clears the row when the instance id was known.
+
+### RDS / Explorer volume isolation (no drive letter for other sessions)
+
+- **Goal:** When user A attaches a mass-storage USB/IP device, user B on the same host (for example another RDS session) should **not** get an automatic drive letter in Explorer for that volume.
+- **Why:** Windows **automatic volume mounting** assigns letters in **each** interactive session unless automount is disabled. The broker’s VolumeWatcher only **adds** a letter in the **owner’s** session; it does not remove letters Windows already assigned elsewhere.
+- **Prerequisite (required on multi-session / RDS hosts):** Disable automatic mounting once on the machine, then reboot if Windows requires it:
+  - **Installer:** leave the task **“Disable global volume automount (mountvol /N)”** enabled (it is on by default). To keep default Windows behavior on a single-user dev box, clear that task during setup.
+  - **Manual:** run an elevated command prompt: `mountvol /N`
+- **What still differs from Device Manager:** The `usbip2_filter` **CreateFile** gate controls **who may open** the USB stack when an owner is registered; it does **not** remove devices from the global PnP tree. This section is only about **Explorer drive letters / mounted volumes**.
+- **Broker behavior:** On volume arrival, `usbip-broker` writes a short UTF-16 `.cmd` under `C:\temp\usbip\logs\`, runs it in the owner’s session via `CreateProcessAsUser`, logs the child **exit code**, and records the chosen letter for `mountvol /D` on detach or session logoff.
+- **Verification matrix**
+
+| Step | Owner session | Other RDS / local session |
+|------|----------------|---------------------------|
+| After install | `mountvol /N` applied (installer task or manual) | Same machine |
+| After owner attaches mass-storage volume | Owner sees a new drive letter after broker mount | **No** new drive letter for that volume |
+| Broker log | `volume mount: cmd exit=0` and `unmount_session_drive_letter` on detach when applicable | N/A |
+| If mount fails | Check `C:\temp\usbip\logs\usbip_broker_mounterr_<port>.txt` and broker log for `WTSQueryUserToken` / `CreateProcessAsUser` | N/A |
+
 ### Uninstallation of USB/IP
 - Uninstall USB/IP app
 - Disable test signing if it was enabled during the installation

@@ -2,6 +2,8 @@
  * Copyright (c) 2022-2026 Vadym Hrynchyshyn <vadimgrn@gmail.com>
  */
 
+#include <ntifs.h> // SeQueryInformationToken, must precede WDF headers
+
 #include "vhci_ioctl.h"
 #include "trace.h"
 #include "vhci_ioctl.tmh"
@@ -29,6 +31,143 @@ using namespace usbip;
 
 static_assert(sizeof(vhci::imported_device_location::service) == NI_MAXSERV);
 static_assert(sizeof(vhci::imported_device_location::host) == NI_MAXHOST);
+
+/*
+ * Build the well-known LocalSystem SID (S-1-5-18) into a caller-provided buffer.
+ * The buffer must be at least SECURITY_MAX_SID_SIZE bytes.
+ */
+_IRQL_requires_same_
+_IRQL_requires_max_(PASSIVE_LEVEL)
+PAGED auto build_local_system_sid(_Out_writes_bytes_(buf_size) void *buf, _In_ ULONG buf_size)
+{
+        PAGED_CODE();
+        if (buf_size < SECURITY_MAX_SID_SIZE) {
+                return STATUS_BUFFER_TOO_SMALL;
+        }
+
+        SID_IDENTIFIER_AUTHORITY nt_auth = SECURITY_NT_AUTHORITY;
+        auto st = RtlInitializeSid(buf, &nt_auth, 1);
+        if (NT_SUCCESS(st)) {
+                *RtlSubAuthoritySid(buf, 0) = SECURITY_LOCAL_SYSTEM_RID;
+        }
+        return st;
+}
+
+/*
+ * Capture the owner SID and RDP session of the IRP's caller.
+ * On success, out.sid is allocated in PagedPool with the driver pool tag and
+ * the caller is responsible for free(out) (or destruction via device_ctx_ext).
+ *
+ * On failure, out is left zeroed.
+ */
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS capture_owner_from_request(_In_ WDFREQUEST request, _Out_ device_owner &out)
+{
+        PAGED_CODE();
+        out = {};
+
+        SECURITY_SUBJECT_CONTEXT subj;
+        SeCaptureSubjectContext(&subj);
+
+        auto token = SeQuerySubjectContextToken(&subj);
+        if (!token) {
+                SeReleaseSubjectContext(&subj);
+                return STATUS_NO_TOKEN;
+        }
+
+        PVOID token_info{};
+        auto st = SeQueryInformationToken(token, TokenUser, &token_info);
+
+        if (NT_SUCCESS(st)) {
+                auto user = static_cast<TOKEN_USER*>(token_info);
+
+                if (!RtlValidSid(user->User.Sid)) {
+                        st = STATUS_INVALID_SID;
+                } else {
+                        ULONG session_id = 0;
+                        if (auto irp = WdfRequestWdmGetIrp(request)) {
+                                if (auto err = IoGetRequestorSessionId(irp, &session_id); NT_ERROR(err)) {
+                                        TraceDbg("IoGetRequestorSessionId %!STATUS!", err);
+                                        session_id = 0;
+                                }
+                        }
+                        st = set_device_owner(out, user->User.Sid, session_id);
+                }
+
+                ExFreePool(token_info);
+        } else {
+                Trace(TRACE_LEVEL_ERROR, "SeQueryInformationToken(TokenUser) %!STATUS!", st);
+        }
+
+        SeReleaseSubjectContext(&subj);
+        return st;
+}
+
+/*
+ * Returns true iff the caller's primary or impersonation token represents the
+ * LocalSystem account (S-1-5-18). Used to gate IOCTLs that the broker issues
+ * on behalf of an explicit owner SID, where we must trust the caller.
+ */
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED bool is_caller_local_system(_In_ WDFREQUEST request)
+{
+        PAGED_CODE();
+        UNREFERENCED_PARAMETER(request);
+
+        SECURITY_SUBJECT_CONTEXT subj;
+        SeCaptureSubjectContext(&subj);
+
+        bool result = false;
+
+        if (auto token = SeQuerySubjectContextToken(&subj)) {
+                PVOID token_info{};
+                if (NT_SUCCESS(SeQueryInformationToken(token, TokenUser, &token_info))) {
+                        auto user = static_cast<TOKEN_USER*>(token_info);
+
+                        UCHAR sys_buf[SECURITY_MAX_SID_SIZE]{};
+                        if (NT_SUCCESS(build_local_system_sid(sys_buf, sizeof(sys_buf))) &&
+                            RtlValidSid(user->User.Sid) &&
+                            RtlEqualSid(user->User.Sid, sys_buf)) {
+                                result = true;
+                        }
+                        ExFreePool(token_info);
+                }
+        }
+
+        SeReleaseSubjectContext(&subj);
+        return result;
+}
+
+/*
+ * Validate and copy a self-relative SID delivered through plugin_hardware_for_user.
+ * On success owner is populated with a fresh PagedPool copy.
+ */
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS parse_owner_from_explicit_buf(
+        _In_ const vhci::ioctl::plugin_hardware_for_user &r, _Out_ device_owner &out)
+{
+        PAGED_CODE();
+        out = {};
+
+        if (!r.sid_size || r.sid_size > sizeof(r.sid)) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        auto sid = const_cast<PSID>(static_cast<const void*>(r.sid));
+
+        if (!RtlValidSid(sid)) {
+                return STATUS_INVALID_SID;
+        }
+
+        if (RtlLengthSid(sid) != r.sid_size) {
+                return STATUS_INVALID_SID;
+        }
+
+        return set_device_owner(out, sid, r.session_id);
+}
 
 enum { ARG_INFO, ARG_FUNCTION, ARG_AI }; // the fourth parameter is used by WSK subsystem
 
@@ -449,7 +588,10 @@ PAGED void NTAPI complete(_In_ WDFWORKITEM wi)
                 stop_attach_attempts(vhci, hash);
         } else if (NT_ERROR(st) && can_reattach(ctx.vhci, hash, st)) {
                 stop_attach_attempts(vhci, hash);
-                start_attach_attempts(ctx.vhci, vhci, ext.attr, true);
+                // Per-user isolation: forward owner SID so retried attach binds to
+                // the same user. ext.owner may be empty for legacy / System attaches.
+                start_attach_attempts(ctx.vhci, vhci, ext.attr, true,
+                                      ext.owner.sid, ext.owner.sid_size);
         }
 
         WdfObjectDelete(wi); // do not use ctx.request more, see workitem_cleanup
@@ -529,11 +671,14 @@ PAGED void getaddrinfo(
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
 PAGED auto plugin_hardware(
-        _In_ WDFREQUEST request, _In_ const vhci::ioctl::plugin_hardware &r, _In_ bool once)
+        _In_ WDFREQUEST request,
+        _In_ const vhci::imported_device_location &loc,
+        _In_ bool once,
+        _Inout_ device_owner &owner /* ownership transferred into ext.owner on success */)
 {
         PAGED_CODE();
 
-        Trace(TRACE_LEVEL_INFORMATION, "%s:%s/%s, once %!bool!", r.host, r.service, r.busid, once);
+        Trace(TRACE_LEVEL_INFORMATION, "%s:%s/%s, once %!bool!", loc.host, loc.service, loc.busid, once);
         auto vhci = get_vhci(request);
 
         WDFWORKITEM wi{};
@@ -547,12 +692,18 @@ PAGED auto plugin_hardware(
         ctx.request = request;
         ctx.one_attempt = once;
 
-        if (auto err = create_device_ctx_ext(ctx.ctx_ext, vhci, r)) {
+        if (auto err = create_device_ctx_ext(ctx.ctx_ext, vhci, loc)) {
                 WdfObjectDelete(wi);
                 return err;
         }
 
         auto &ext = ctx.ext();
+
+        // Transfer captured owner (if any) into the persistent device_ctx_ext.
+        // From this point ext.owner owns the SID buffer and will free it on destroy.
+        ext.owner = owner;
+        owner = {};
+
         device_state_changed(vhci, ext.attr, 0, vhci::state::connecting);
 
         getaddrinfo(request, wi, ctx, ext); // completion handler will be called anyway
@@ -627,7 +778,128 @@ PAGED NTSTATUS plugin_hardware(_In_ WDFREQUEST request, _In_ bool once)
         constexpr auto written = offsetof(vhci::ioctl::plugin_hardware, port) + sizeof(r->port);
         WdfRequestSetInformation(request, written);
 
-        return plugin_hardware(request, *r, once);
+        // Capture the calling user's primary/impersonation SID. If capture fails,
+        // proceed with an empty owner; the device will be admin-only-accessible.
+        device_owner owner{};
+        if (auto err = capture_owner_from_request(request, owner); NT_ERROR(err)) {
+                TraceDbg("capture_owner_from_request %!STATUS!, attaching as no-owner", err);
+                owner = {};
+        }
+
+        auto st = plugin_hardware(request, *r, once, owner);
+        if (st != STATUS_PENDING) {
+                free(owner); // inner did not take it
+        }
+        return st;
+}
+
+/*
+ * Explicit-owner-SID variant. Only LocalSystem may invoke this IOCTL; the broker
+ * uses it for persistent reattach where there is no caller to impersonate.
+ */
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS plugin_hardware_for_user(_In_ WDFREQUEST request)
+{
+        PAGED_CODE();
+        WdfRequestSetInformation(request, 0);
+
+        if (!is_caller_local_system(request)) {
+                Trace(TRACE_LEVEL_WARNING, "PLUGIN_HARDWARE_FOR_USER refused: caller is not LocalSystem");
+                return STATUS_ACCESS_DENIED;
+        }
+
+        vhci::ioctl::plugin_hardware_for_user *r{};
+
+        if (size_t length;
+            auto err = WdfRequestRetrieveInputBuffer(request, sizeof(*r), reinterpret_cast<PVOID*>(&r), &length)) {
+                return err;
+        } else if (length != sizeof(*r)) {
+                return STATUS_INVALID_BUFFER_SIZE;
+        } else if (r->size != length) {
+                Trace(TRACE_LEVEL_ERROR, "struct.size %lu != sizeof(struct) %Iu", r->size, length);
+                return USBIP_ERROR_ABI;
+        }
+
+        r->port = 0;
+
+        constexpr auto written =
+                offsetof(vhci::ioctl::plugin_hardware_for_user, port) + sizeof(r->port);
+        WdfRequestSetInformation(request, written);
+
+        device_owner owner{};
+        if (auto err = parse_owner_from_explicit_buf(*r, owner)) {
+                return err;
+        }
+
+        auto &loc = static_cast<const vhci::imported_device_location&>(*r);
+        auto st = plugin_hardware(request, loc, false /*not once*/, owner);
+        if (st != STATUS_PENDING) {
+                free(owner);
+        }
+        return st;
+}
+
+/*
+ * Look up the owner SID/session of the device sitting on the given hub port.
+ * LocalSystem-only: used by the broker to resolve a volume PDO -> owning user.
+ */
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS get_device_owner(_In_ WDFREQUEST request)
+{
+        PAGED_CODE();
+        WdfRequestSetInformation(request, 0);
+
+        if (!is_caller_local_system(request)) {
+                Trace(TRACE_LEVEL_WARNING, "GET_DEVICE_OWNER refused: caller is not LocalSystem");
+                return STATUS_ACCESS_DENIED;
+        }
+
+        vhci::ioctl::get_device_owner *r{};
+        if (size_t length;
+            auto err = WdfRequestRetrieveOutputBuffer(request, sizeof(*r),
+                                                     reinterpret_cast<PVOID*>(&r), &length)) {
+                return err;
+        } else if (length != sizeof(*r)) {
+                return STATUS_INVALID_BUFFER_SIZE;
+        } else if (r->size != length) {
+                Trace(TRACE_LEVEL_ERROR, "get_device_owner.size %lu != %Iu", r->size, length);
+                return USBIP_ERROR_ABI;
+        }
+
+        auto port = r->port;
+        if (port < 1) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        auto vhci = get_vhci(request);
+        auto &ctx = *get_vhci_ctx(vhci);
+        if (!is_valid_port(ctx, port)) {
+                return STATUS_INVALID_PARAMETER;
+        }
+
+        auto dev = vhci::get_device(vhci, port);
+        if (!dev) {
+                return STATUS_DEVICE_NOT_CONNECTED;
+        }
+
+        auto dc = get_device_ctx(dev.get<UDECXUSBDEVICE>());
+        auto &owner = dc->ext().owner;
+
+        // Zero output by default.
+        r->session_id = 0;
+        r->sid_size = 0;
+        RtlZeroMemory(r->sid, sizeof(r->sid));
+
+        if (owner.sid && owner.sid_size && owner.sid_size <= sizeof(r->sid)) {
+                RtlCopyMemory(r->sid, owner.sid, owner.sid_size);
+                r->sid_size = owner.sid_size;
+                r->session_id = owner.session_id;
+        }
+
+        WdfRequestSetInformation(request, sizeof(*r));
+        return STATUS_SUCCESS;
 }
 
 _IRQL_requires_same_
@@ -689,18 +961,46 @@ PAGED NTSTATUS get_imported_devices(_In_ WDFREQUEST request)
 
         auto vhci = get_vhci(request);
         auto &ctx = *get_vhci_ctx(vhci);
-        
+
+        // Per-user filtering: capture the caller and check if it is privileged.
+        // Privileged callers (LocalSystem, Administrators) get the full list so
+        // the broker / management UI can enumerate everything.
+        device_owner caller{};
+        bool privileged_caller = is_caller_local_system(request);
+        if (!privileged_caller) {
+                if (auto err = capture_owner_from_request(request, caller); NT_ERROR(err)) {
+                        TraceDbg("get_imported_devices: capture_owner %!STATUS!", err);
+                }
+        }
+
         ULONG cnt = 0;
 
         for (int port = 1; port <= ctx.devices_cnt; ++port) {
                 if (auto dev = vhci::get_device(vhci, port); !dev) {
                         //
                 } else if (cnt == max_cnt) {
+                        free(caller);
                         return STATUS_BUFFER_TOO_SMALL;
-                } else if (auto dc = get_device_ctx(dev.get()); auto err = fill(r->devices[cnt++], *dc)) {
-                        return err;
+                } else if (auto dc = get_device_ctx(dev.get())) {
+                        if (!privileged_caller) {
+                                auto &owner = dc->ext().owner;
+                                bool match = false;
+                                if (owner.sid && caller.sid &&
+                                    RtlEqualSid(owner.sid, caller.sid)) {
+                                        match = true;
+                                }
+                                if (!match) {
+                                        continue;
+                                }
+                        }
+                        if (auto err = fill(r->devices[cnt++], *dc)) {
+                                free(caller);
+                                return err;
+                        }
                 }
         }
+
+        free(caller);
 
         TraceDbg("%lu device(s) reported", cnt);
 
@@ -819,6 +1119,12 @@ PAGED void device_control(
                 [[fallthrough]];
         case vhci::ioctl::PLUGIN_HARDWARE:
                 st = plugin_hardware(Request, once);
+                break;
+        case vhci::ioctl::PLUGIN_HARDWARE_FOR_USER:
+                st = plugin_hardware_for_user(Request);
+                break;
+        case vhci::ioctl::GET_DEVICE_OWNER:
+                st = get_device_owner(Request);
                 break;
         case vhci::ioctl::PLUGOUT_HARDWARE_AND_REATTACH:
                 reattach = true;

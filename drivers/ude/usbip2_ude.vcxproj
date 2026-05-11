@@ -199,6 +199,7 @@
       <WppAdditionalConfigurationFile>custom_wpp.ini</WppAdditionalConfigurationFile>
       <AdditionalOptions>/Zc:__cplusplus %(ClCompile.AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>certHash</FileDigestAlgorithm>
@@ -220,6 +221,7 @@
       <WppAdditionalConfigurationFile>custom_wpp.ini</WppAdditionalConfigurationFile>
       <AdditionalOptions>/Zc:__cplusplus %(ClCompile.AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>certHash</FileDigestAlgorithm>
@@ -241,6 +243,7 @@
       <WppAdditionalConfigurationFile>custom_wpp.ini</WppAdditionalConfigurationFile>
       <AdditionalOptions>/Zc:__cplusplus %(ClCompile.AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>certHash</FileDigestAlgorithm>
@@ -262,6 +265,7 @@
       <WppAdditionalConfigurationFile>custom_wpp.ini</WppAdditionalConfigurationFile>
       <AdditionalOptions>/Zc:__cplusplus %(ClCompile.AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>certHash</FileDigestAlgorithm>

@@ -6,6 +6,7 @@
 
 #include "device_speed.h"
 #include "output.h"
+#include "broker_handle.h"
 
 #include <resources\messages.h>
 #include <cfgmgr32.h>
@@ -14,6 +15,19 @@
 #include <usbip\vhci.h>
 
 #include <span>
+#include <atomic>
+
+static std::atomic<bool> g_require_broker_only{false};
+
+void usbip::vhci::set_require_broker_only(bool require) noexcept
+{
+        g_require_broker_only.store(require, std::memory_order_relaxed);
+}
+
+bool usbip::vhci::get_require_broker_only() noexcept
+{
+        return g_require_broker_only.load(std::memory_order_relaxed);
+}
 
 namespace
 {
@@ -198,7 +212,26 @@ auto usbip::vhci::open(_In_ bool overlapped) -> Handle
 
         Handle h;
 
-        if (auto path = get_path(); !path.empty()) {
+        if (g_require_broker_only.load(std::memory_order_relaxed)) {
+                auto pipe = broker_client::open_pipe();
+                if (pipe == INVALID_HANDLE_VALUE) {
+                        const DWORD err = GetLastError();
+                        libusbip::output(
+                                "vhci: broker-only open failed err={} (start usbip-broker; or set "
+                                "USBIP_ALLOW_DIRECT_VHCI=1 only if your account may open VHCI "
+                                "directly)",
+                                err);
+                        SetLastError(err);
+                        return h;
+                }
+                h.reset(pipe);
+                libusbip::output("vhci: open ok backend=broker_pipe (usbip-broker named pipe, "
+                                 "per-user isolation)");
+                return h;
+        }
+
+        auto path = get_path();
+        if (!path.empty()) {
                 h.reset(CreateFile(path.c_str(), 
                                 GENERIC_READ | GENERIC_WRITE, 
                                 FILE_SHARE_READ | FILE_SHARE_WRITE, 
@@ -206,6 +239,34 @@ auto usbip::vhci::open(_In_ bool overlapped) -> Handle
                                 OPEN_EXISTING, 
                                 FlagsAndAttributes,
                                 nullptr)); // hTemplateFile
+                if (!h) {
+                        libusbip::output(L"vhci: CreateFile VHCI {} failed #{}",
+                                         path, GetLastError());
+                }
+        }
+
+        // Per-user isolation fallback: if the VHCI device denied access (Phase 0
+        // SDDL only allows LocalSystem and Administrators), retry against the
+        // usbip-broker named pipe. Subsequent libusbip APIs detect the pipe via
+        // GetFileType and route through the broker.
+        if (!h && GetLastError() == ERROR_ACCESS_DENIED) {
+                libusbip::output("vhci: VHCI access denied; opening usbip-broker pipe");
+                auto pipe = broker_client::open_pipe();
+                if (pipe != INVALID_HANDLE_VALUE) {
+                        h.reset(pipe);
+                }
+        }
+
+        if (h) {
+                const auto ft = ::GetFileType(h.get());
+                if (ft == FILE_TYPE_PIPE) {
+                        libusbip::output("vhci: open ok backend=broker_pipe "
+                                         "(usbip-broker named pipe)");
+                } else {
+                        libusbip::output(
+                                "vhci: open ok backend=direct ioctl (FILE_TYPE={}, use driver handle)",
+                                static_cast<unsigned>(ft));
+                }
         }
 
         return h;
@@ -213,6 +274,10 @@ auto usbip::vhci::open(_In_ bool overlapped) -> Handle
 
 std::optional<std::vector<usbip::imported_device>> usbip::vhci::get_imported_devices(_In_ HANDLE dev)
 {
+        if (GetFileType(dev) == FILE_TYPE_PIPE) {
+                return broker_client::get_imported_devices(dev);
+        }
+
         std::optional<std::vector<usbip::imported_device>> devices;
 
         constexpr auto devices_offset = offsetof(ioctl::get_imported_devices, devices);
@@ -239,6 +304,8 @@ std::optional<std::vector<usbip::imported_device>> usbip::vhci::get_imported_dev
                         break;
 
                 } else if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+                        libusbip::output("vhci: get_imported_devices DeviceIoControl failed #{}",
+                                         GetLastError());
                         return devices;
                 }
         }
@@ -250,6 +317,7 @@ std::optional<std::vector<usbip::imported_device>> usbip::vhci::get_imported_dev
         } else {
                 auto cnt = devices_size/sizeof(*r->devices);
                 devices = make_imported_devices({r->devices, cnt});
+                libusbip::output("vhci: get_imported_devices count={}", cnt);
         }
 
         return devices;
@@ -262,11 +330,20 @@ USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &l
                 return 0;
         }
 
+        if (GetFileType(dev) == FILE_TYPE_PIPE) {
+                libusbip::output(
+                        "vhci: attach route=broker_pipe (see following broker: attach lines)");
+                return broker_client::attach(dev, location, options);
+        }
+
         ioctl::plugin_hardware r {{ .size = sizeof(r) }};
         if (!assign(r, location)) {
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return 0;
         }
+
+        libusbip::output("vhci: attach ioctl {}:{}/{}, once={}", location.hostname, location.service,
+                         location.busid, (options & ATTACH_ONCE) != 0);
 
         auto ctl = options & ATTACH_ONCE ? ioctl::PLUGIN_HARDWARE_ONCE : ioctl::PLUGIN_HARDWARE;
         constexpr auto outlen = offsetof(ioctl::plugin_hardware, port) + sizeof(r.port);
@@ -275,14 +352,22 @@ USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &l
             DeviceIoControl(dev, ctl, &r, sizeof(r), &r, outlen, &BytesReturned, nullptr)) {
 
                 if (BytesReturned != outlen) [[unlikely]] {
+                        libusbip::output("vhci: attach ioctl bad length returned {} expected {}",
+                                         BytesReturned, outlen);
                         SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
-                } else {
-                        assert(r.port > 0);
-                        return r.port;
+                        return 0;
                 }
+                if (r.port <= 0) [[unlikely]] {
+                        libusbip::output("vhci: attach ioctl returned invalid port {}", r.port);
+                        SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
+                        return 0;
+                }
+                libusbip::output("vhci: attach ioctl ok port={}", r.port);
+                return r.port;
         }
 
         auto err = GetLastError();
+        libusbip::output("vhci: attach ioctl failed #{}", err);
         if (auto code = map_attach_error(err); code != err) {
                 SetLastError(code);
         }
@@ -297,6 +382,12 @@ int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &location)
 
 int usbip::vhci::stop_attach_attempts(_In_ HANDLE dev, _In_opt_ const device_location *location)
 {
+        if (GetFileType(dev) == FILE_TYPE_PIPE) {
+                // Broker fallback: not supported (the broker rejects unknown commands).
+                SetLastError(ERROR_NOT_SUPPORTED);
+                return -1;
+        }
+
         ioctl::stop_attach_attempts r {{ .size = sizeof(r) }};
 
         if (location && !assign(r, *location)) {
@@ -318,11 +409,19 @@ int usbip::vhci::stop_attach_attempts(_In_ HANDLE dev, _In_opt_ const device_loc
 
 bool usbip::vhci::detach(_In_ HANDLE dev, _In_ int port)
 {
+        if (GetFileType(dev) == FILE_TYPE_PIPE) {
+                return broker_client::detach(dev, port);
+        }
+
         ioctl::plugout_hardware r { .port = port };
         r.size = sizeof(r);
 
         DWORD BytesReturned{}; // must be set if the last arg is NULL
-        return DeviceIoControl(dev, ioctl::PLUGOUT_HARDWARE, &r, sizeof(r), nullptr, 0, &BytesReturned, nullptr);
+        if (DeviceIoControl(dev, ioctl::PLUGOUT_HARDWARE, &r, sizeof(r), nullptr, 0, &BytesReturned, nullptr)) {
+                return true;
+        }
+        libusbip::output("vhci: detach DeviceIoControl port={} failed #{}", port, GetLastError());
+        return false;
 }
 
 USBIP_API DWORD usbip::vhci::get_device_state_size() noexcept
@@ -355,10 +454,18 @@ USBIP_API std::optional<usbip::device_state> usbip::vhci::get_device_state(_In_ 
 std::optional<usbip::device_state> usbip::vhci::read_device_state(_In_ HANDLE dev)
 {
         std::optional<usbip::device_state> state;
+
+        if (GetFileType(dev) == FILE_TYPE_PIPE) {
+                // The broker has no event stream; signal end-of-file so the caller
+                // (e.g. wusbip) treats this handle as quiescent rather than spinning.
+                SetLastError(ERROR_HANDLE_EOF);
+                return state;
+        }
+
         DWORD actual;
 
         if (vhci::device_state r; !ReadFile(dev, &r, sizeof(r), &actual, nullptr)) {
-                //
+                libusbip::output("vhci: read_device_state ReadFile failed #{}", GetLastError());
         } else if (!actual) {
                 SetLastError(ERROR_HANDLE_EOF);
         } else {

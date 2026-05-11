@@ -698,6 +698,8 @@
             <event name="OnMenuSelection">on_detach_all</event>
           </object>
         </object>
+        <!-- Log menu disabled: wusbip uses file logging only (see frame.cpp and usbip::install_wx_log_for_spdlog). -->
+        <!--
         <object class="wxMenu" expanded="false">
           <property name="label">Log</property>
           <property name="name">m_menu_log</property>
@@ -736,7 +738,7 @@
             <property name="bitmap">Load From File; </property>
             <property name="checked">0</property>
             <property name="enabled">1</property>
-            <property name="help">Show debug messages from libusbip</property>
+            <property name="help">libusbip debug (VHCI, broker pipe, sockets). Enable Log / Verbose first.</property>
             <property name="id">wxID_ANY</property>
             <property name="kind">wxITEM_CHECK</property>
             <property name="label">Library</property>
@@ -748,6 +750,7 @@
             <event name="OnUpdateUI">on_log_library_update_ui</event>
           </object>
         </object>
+        -->
         <object class="wxMenu" expanded="false">
           <property name="label">Help</property>
           <property name="name">m_menu_help</property>

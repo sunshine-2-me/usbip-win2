@@ -2,6 +2,8 @@
  * Copyright (c) 2022-2026 Vadym Hrynchyshyn <vadimgrn@gmail.com>
  */
 
+#include <ntifs.h>
+
 #include "context.h"
 #include "trace.h"
 #include "context.tmh"
@@ -59,6 +61,7 @@ PAGED void destroy_device_ctx_ext(_In_ WDFOBJECT object)
 
         free(ext.sock);
         free(ext.attr);
+        free(ext.owner);
 }
 
 _IRQL_requires_same_
@@ -111,7 +114,7 @@ auto usbip::next_seqnum(_Inout_ device_ctx &dev, _In_ bool dir_in) -> seqnum_t
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
 PAGED NTSTATUS usbip::create_device_ctx_ext(
-        _Inout_ WDFMEMORY &ctx_ext, _In_ WDFOBJECT parent, _In_ const vhci::ioctl::plugin_hardware &r)
+        _Inout_ WDFMEMORY &ctx_ext, _In_ WDFOBJECT parent, _In_ const vhci::imported_device_location &loc)
 {
         PAGED_CODE();
 
@@ -120,7 +123,7 @@ PAGED NTSTATUS usbip::create_device_ctx_ext(
         }
 
         auto &ext = get_device_ctx_ext(ctx_ext);
-        return init_device_attributes(ext.attr, r);
+        return init_device_attributes(ext.attr, loc);
 }
 
 _IRQL_requires_same_
@@ -168,4 +171,50 @@ PAGED void usbip::free(_Inout_ device_attributes &r)
         libdrv::FreeUnicodeString(r.node_name, pooltag); // @see RtlFreeUnicodeString
         libdrv::FreeUnicodeString(r.service_name, pooltag);
         libdrv::FreeUnicodeString(r.busid, pooltag);
+}
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED void usbip::free(_Inout_ device_owner &r)
+{
+        PAGED_CODE();
+
+        if (r.sid) {
+                ExFreePoolWithTag(r.sid, pooltag);
+                r.sid = nullptr;
+        }
+        r.sid_size = 0;
+        r.session_id = 0;
+}
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS usbip::set_device_owner(
+        _Inout_ device_owner &owner, _In_ PSID sid, _In_ ULONG session_id)
+{
+        PAGED_CODE();
+        NT_ASSERT(sid);
+
+        free(owner);
+
+        auto length = RtlLengthSid(sid);
+
+        auto buf = ExAllocatePoolWithTag(PagedPool, length, pooltag);
+        if (!buf) {
+                Trace(TRACE_LEVEL_ERROR, "ExAllocatePoolWithTag owner sid %lu bytes failed", length);
+                return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        NTSTATUS err = RtlCopySid(length, static_cast<PSID>(buf), sid);
+        if (!NT_SUCCESS(err)) {
+                Trace(TRACE_LEVEL_ERROR, "RtlCopySid %!STATUS!", err);
+                ExFreePoolWithTag(buf, pooltag);
+                return err;
+        }
+
+        owner.sid = static_cast<PSID>(buf);
+        owner.sid_size = length;
+        owner.session_id = session_id;
+
+        return STATUS_SUCCESS;
 }

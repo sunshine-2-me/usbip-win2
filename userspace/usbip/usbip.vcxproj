@@ -99,7 +99,7 @@
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>shlwapi.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib</AdditionalDependencies>
+      <AdditionalDependencies>shlwapi.lib;Shell32.lib;Ole32.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -117,7 +117,7 @@
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>shlwapi.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib</AdditionalDependencies>
+      <AdditionalDependencies>shlwapi.lib;Shell32.lib;Ole32.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -142,7 +142,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>shlwapi.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib</AdditionalDependencies>
+      <AdditionalDependencies>shlwapi.lib;Shell32.lib;Ole32.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -167,11 +167,14 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>shlwapi.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib</AdditionalDependencies>
+      <AdditionalDependencies>shlwapi.lib;Shell32.lib;Ole32.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\common\log_format.cpp" />
+    <ClCompile Include="..\common\log_paths.cpp" />
+    <ClCompile Include="..\common\process_elevation.cpp" />
     <ClCompile Include="strings.cpp" />
     <ClCompile Include="usbip.cpp" />
     <ClCompile Include="attach.cpp" />

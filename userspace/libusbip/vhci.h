@@ -24,6 +24,11 @@ struct device_location
         std::string hostname;
         std::string service; // TCP/IP port number or symbolic name
         std::string busid;
+        // Per-user isolation. Optional SID string ("S-1-5-21-...") of the user who
+        // owns this attachment; empty means "no specific owner / managed as System".
+        // Persisted alongside the location and used on reboot to reattach as that
+        // user via PLUGIN_HARDWARE_FOR_USER.
+        std::string owner_sid;
 };
 
 struct imported_device
@@ -56,6 +61,14 @@ struct device_state
 
 namespace usbip::vhci
 {
+
+/**
+ * When true, vhci::open() never opens the VHCI device directly; it only connects
+ * to usbip-broker (policy + impersonation path). usbip.exe / wusbip.exe call
+ * set_require_broker_only(true) at startup unless USBIP_ALLOW_DIRECT_VHCI is set.
+ */
+USBIP_API void set_require_broker_only(bool require) noexcept;
+USBIP_API bool get_require_broker_only() noexcept;
 
 /**
  * Open driver's device interface

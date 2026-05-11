@@ -34,6 +34,12 @@ struct filter_ext
 		struct {
 			IO_REMOVE_LOCK *parent_remove_lock; // -> hub filter_ext.remove_lock
 			USBD_HANDLE usbd_handle;
+			// Per-user isolation cache. owner_sid is allocated in PagedPool
+			// with pooltag and freed in do_destroy. nullptr means the lookup
+			// has not been attempted yet, or no owner is registered.
+			PSID owner_sid;
+			ULONG owner_session;
+			bool owner_resolved; // true once we have asked owner_table
 		} device; // is_hub == false
 	};
 	bool is_hub;
