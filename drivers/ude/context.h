@@ -86,6 +86,18 @@ struct device_attributes
 };
 
 /*
+ * Per-attach owner identity, used by per-user isolation.
+ * sid is allocated in PagedPool with pooltag and freed in free(device_owner&).
+ * sid == nullptr means "no owner" (legacy / system attach with no policy).
+ */
+struct device_owner
+{
+        PSID sid;
+        ULONG sid_size; // bytes referenced by sid, == RtlLengthSid(sid) when set
+        ULONG session_id; // RDP session id, 0 if unknown
+};
+
+/*
  * Context extention for device_ctx. 
  *
  * TCP/IP connection must be established before creation of UDECXUSBDEVICE because UdecxUsbDeviceInitSetSpeed 
@@ -103,6 +115,7 @@ struct device_ctx_ext
         wsk::SOCKET *sock;
 
         device_attributes attr;
+        device_owner owner; // per-user isolation, may be empty {nullptr,0,0}
 
         auto node_name() { return &attr.node_name; }
         auto service_name() { return &attr.service_name; }
@@ -264,7 +277,7 @@ constexpr UINT32 make_devid(UINT16 busnum, UINT16 devnum)
 
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
-PAGED NTSTATUS create_device_ctx_ext(_Inout_ WDFMEMORY &ctx_ext, _In_ WDFOBJECT parent, _In_ const vhci::ioctl::plugin_hardware &r);
+PAGED NTSTATUS create_device_ctx_ext(_Inout_ WDFMEMORY &ctx_ext, _In_ WDFOBJECT parent, _In_ const vhci::imported_device_location &loc);
 
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
@@ -273,6 +286,20 @@ PAGED NTSTATUS init_device_attributes(_Inout_ device_attributes &attr, _In_ cons
 _IRQL_requires_same_
 _IRQL_requires_(PASSIVE_LEVEL)
 PAGED void free(_Inout_ device_attributes &r);
+
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED void free(_Inout_ device_owner &r);
+
+/*
+ * Helper: allocate and copy a self-relative SID into device_owner.
+ * Returns STATUS_SUCCESS on success. On failure, owner is left zeroed.
+ * Caller must validate sid via RtlValidSid before calling.
+ */
+_IRQL_requires_same_
+_IRQL_requires_(PASSIVE_LEVEL)
+PAGED NTSTATUS set_device_owner(
+        _Inout_ device_owner &owner, _In_ PSID sid, _In_ ULONG session_id);
 
 _IRQL_requires_same_
 _IRQL_requires_max_(DISPATCH_LEVEL)

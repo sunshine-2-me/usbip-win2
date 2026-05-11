@@ -111,9 +111,10 @@
       <AdditionalIncludeDirectories>..;..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WppScanConfigurationData>trace.h</WppScanConfigurationData>
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;$(DDK_LIB_PATH)wdmsec.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -133,9 +134,10 @@
       <AdditionalIncludeDirectories>..;..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WppScanConfigurationData>trace.h</WppScanConfigurationData>
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;$(DDK_LIB_PATH)wdmsec.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -155,9 +157,10 @@
       <AdditionalIncludeDirectories>..;..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WppScanConfigurationData>trace.h</WppScanConfigurationData>
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;$(DDK_LIB_PATH)wdmsec.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -177,9 +180,10 @@
       <AdditionalIncludeDirectories>..;..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WppScanConfigurationData>trace.h</WppScanConfigurationData>
       <PreprocessorDefinitions>POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)WppRecorder.lib;$(DDK_LIB_PATH)Usbdex.lib;$(DDK_LIB_PATH)wdmsec.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -190,6 +194,8 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="control_device.cpp" />
+    <ClCompile Include="owner_table.cpp" />
     <ClCompile Include="query_interface.cpp" />
     <ClCompile Include="request.cpp" />
     <ClCompile Include="device.cpp" />
@@ -198,6 +204,8 @@
     <ClCompile Include="pnp.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="control_device.h" />
+    <ClInclude Include="owner_table.h" />
     <ClInclude Include="query_interface.h" />
     <ClInclude Include="request.h" />
     <ClInclude Include="irp.h" />

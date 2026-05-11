@@ -336,35 +336,28 @@ Frame::Frame( wxWindow* parent, wxWindowID id, const wxString& title, const wxPo
 
 	m_menubar->Append( m_menu_devices, _("Devices") );
 
-	m_menu_log = new wxMenu();
-	wxMenuItem* m_log_toggle;
-	m_log_toggle = new wxMenuItem( m_menu_log, ID_TOGGLE_LOG_WINDOW, wxString( _("Toggle window") ) + wxT('\t') + wxT("CTRL+W"), _("Show/hide the window with log records"), wxITEM_CHECK );
-	#ifdef __WXMSW__
-	m_log_toggle->SetBitmaps( wxNullBitmap );
-	#elif (defined( __WXGTK__ ) || defined( __WXOSX__ ))
-	m_log_toggle->SetBitmap( wxNullBitmap );
-	#endif
-	m_menu_log->Append( m_log_toggle );
-
-	wxMenuItem* m_log_verbose;
-	m_log_verbose = new wxMenuItem( m_menu_log, wxID_ANY, wxString( _("Verbose") ) , _("Show debug messages in the log window"), wxITEM_CHECK );
-	#ifdef __WXMSW__
-	m_log_verbose->SetBitmaps( wxNullBitmap );
-	#elif (defined( __WXGTK__ ) || defined( __WXOSX__ ))
-	m_log_verbose->SetBitmap( wxNullBitmap );
-	#endif
-	m_menu_log->Append( m_log_verbose );
-
-	wxMenuItem* m_log_library;
-	m_log_library = new wxMenuItem( m_menu_log, wxID_ANY, wxString( _("Library") ) , _("Show debug messages from libusbip"), wxITEM_CHECK );
-	#ifdef __WXMSW__
-	m_log_library->SetBitmaps( wxNullBitmap );
-	#elif (defined( __WXGTK__ ) || defined( __WXOSX__ ))
-	m_log_library->SetBitmap( wxNullBitmap );
-	#endif
-	m_menu_log->Append( m_log_library );
-
-	m_menubar->Append( m_menu_log, _("Log") );
+	// wxLogWindow disabled — logging goes to spdlog file only (see usbip::install_wx_log_for_spdlog).
+	// m_menu_log = new wxMenu();
+	// wxMenuItem* m_log_toggle;
+	// m_log_toggle = new wxMenuItem( m_menu_log, ID_TOGGLE_LOG_WINDOW, wxString( _("Toggle window") ) + wxT('\t') + wxT("CTRL+W"), _("Show/hide the window with log records"), wxITEM_CHECK );
+	// #ifdef __WXMSW__
+	// m_log_toggle->SetBitmaps( wxNullBitmap );
+	// #elif (defined( __WXGTK__ ) || defined( __WXOSX__ ))
+	// m_log_toggle->SetBitmap( wxNullBitmap );
+	// #endif
+	// m_menu_log->Append( m_log_toggle );
+	//
+	// wxMenuItem* m_log_verbose;
+	// m_log_verbose = new wxMenuItem( m_menu_log, wxID_ANY, wxString( _("Verbose") ) , _("Show debug messages in the log window"), wxITEM_CHECK );
+	// #ifdef __WXMSW__
+	// m_log_verbose->SetBitmaps( wxNullBitmap );
+	// #elif (defined( __WXGTK__ ) || defined( __WXOSX__ ))
+	// m_log_verbose->SetBitmap( wxNullBitmap );
+	// #endif
+	// m_menu_log->Append( m_log_verbose );
+	//
+	// m_menubar->Append( m_menu_log, _("Log") );
+	m_menu_log = nullptr;
 
 	m_menu_help = new wxMenu();
 	wxMenuItem* m_help_about;
@@ -527,12 +520,10 @@ Frame::Frame( wxWindow* parent, wxWindowID id, const wxString& title, const wxPo
 	m_menu_devices->Bind(wxEVT_COMMAND_MENU_SELECTED, wxCommandEventHandler( Frame::on_detach ), this, m_cmd_detach->GetId());
 	this->Connect( m_cmd_detach->GetId(), wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_has_selected_devices_update_ui ) );
 	m_menu_devices->Bind(wxEVT_COMMAND_MENU_SELECTED, wxCommandEventHandler( Frame::on_detach_all ), this, m_cmd_detach_all->GetId());
-	m_menu_log->Bind(wxEVT_COMMAND_MENU_SELECTED, wxCommandEventHandler( Frame::on_log_show ), this, m_log_toggle->GetId());
-	this->Connect( m_log_toggle->GetId(), wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_show_update_ui ) );
-	m_menu_log->Bind(wxEVT_COMMAND_MENU_SELECTED, wxCommandEventHandler( Frame::on_log_verbose ), this, m_log_verbose->GetId());
-	this->Connect( m_log_verbose->GetId(), wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_verbose_update_ui ) );
-	m_menu_log->Bind(wxEVT_COMMAND_MENU_SELECTED, wxCommandEventHandler( Frame::on_log_library ), this, m_log_library->GetId());
-	this->Connect( m_log_library->GetId(), wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_library_update_ui ) );
+	// m_menu_log->Bind(wxEVT_COMMAND_MENU_SELECTED, wxCommandEventHandler( Frame::on_log_show ), this, m_log_toggle->GetId());
+	// this->Connect( m_log_toggle->GetId(), wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_show_update_ui ) );
+	// m_menu_log->Bind(wxEVT_COMMAND_MENU_SELECTED, wxCommandEventHandler( Frame::on_log_verbose ), this, m_log_verbose->GetId());
+	// this->Connect( m_log_verbose->GetId(), wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_verbose_update_ui ) );
 	m_menu_help->Bind(wxEVT_COMMAND_MENU_SELECTED, wxCommandEventHandler( Frame::on_help_about ), this, m_help_about->GetId());
 	m_menu_help->Bind(wxEVT_COMMAND_MENU_SELECTED, wxCommandEventHandler( Frame::on_help_about_lib ), this, m_help_about_lib->GetId());
 	m_auiToolBar->Connect( wxEVT_MOUSEWHEEL, wxMouseEventHandler( Frame::on_frame_mouse_wheel ), NULL, this );
@@ -580,9 +571,8 @@ Frame::~Frame()
 	this->Disconnect( ID_ATTACH_ONCE, wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_has_any_selected_devices_update_ui ) );
 	this->Disconnect( ID_ATTACH_STOP, wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_has_any_selected_devices_update_ui ) );
 	this->Disconnect( wxID_CLOSE, wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_has_selected_devices_update_ui ) );
-	this->Disconnect( ID_TOGGLE_LOG_WINDOW, wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_show_update_ui ) );
-	this->Disconnect( wxID_ANY, wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_verbose_update_ui ) );
-	this->Disconnect( wxID_ANY, wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_library_update_ui ) );
+	// this->Disconnect( ID_TOGGLE_LOG_WINDOW, wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_show_update_ui ) );
+	// this->Disconnect( wxID_ANY, wxEVT_UPDATE_UI, wxUpdateUIEventHandler( Frame::on_log_verbose_update_ui ) );
 	m_auiToolBar->Disconnect( wxEVT_MOUSEWHEEL, wxMouseEventHandler( Frame::on_frame_mouse_wheel ), NULL, this );
 	this->Disconnect( m_tool_reload->GetId(), wxEVT_COMMAND_TOOL_CLICKED, wxCommandEventHandler( Frame::on_reload ) );
 	this->Disconnect( m_tool_attach->GetId(), wxEVT_COMMAND_TOOL_CLICKED, wxCommandEventHandler( Frame::on_attach ) );

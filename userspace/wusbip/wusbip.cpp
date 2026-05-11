@@ -9,7 +9,6 @@
 #include "wxutils.h"
 #include "utils.h"
 #include "font.h"
-#include "log.h"
 #include "app.h"
 
 #include <libusbip/remote.h>
@@ -29,6 +28,13 @@
 
 #include <format>
 #include <set>
+
+#include <spdlog/spdlog.h>
+
+inline std::string wx_u8(const wxString &s)
+{
+        return std::string(s.utf8_string());
+}
 
 namespace
 {
@@ -117,7 +123,8 @@ void log(_In_ const device_state &st)
                                 loc.hostname, loc.service, loc.busid, vhci::get_state_str(st.state), d.port,
                                 d.devid, static_cast<int>(d.speed), d.vendor, d.product, st.source_id);
 
-        wxLogVerbose(wxString::FromUTF8(s));
+        // wxLogVerbose(wxString::FromUTF8(s));
+        spdlog::info("{}", s);
 }
 
 void log(_In_ const wxTreeListCtrl &tree, _In_ wxTreeListItem dev, _In_ const wxString &prefix)
@@ -140,7 +147,8 @@ void log(_In_ const wxTreeListCtrl &tree, _In_ wxTreeListItem dev, _In_ const wx
                         tree.GetItemText(dev, COL_NOTES),
                         tree.GetItemText(dev, COL_SOURCE_ID));
 
-        wxLogVerbose(s);
+        // wxLogVerbose(s);
+        spdlog::info("{}", wx_u8(s));
 }
 
 auto load_license()
@@ -267,12 +275,16 @@ auto get_persistent(_In_ const Handle &vhci = get_vhci())
 
         if (auto v = vhci::get_persistent(vhci.get()); !v) {
                 auto err = GetLastError();
-                wxLogVerbose(_("Could not get persistent info\nError %lu\n%s"), err, GetLastErrorMsg(err));
+                // wxLogVerbose(_("Could not get persistent info\nError %lu\n%s"), err, GetLastErrorMsg(err));
+                spdlog::info("{}", wx_u8(wxString::Format(_("Could not get persistent info\nError %lu\n%s"), err, GetLastErrorMsg(err))));
         } else for (auto &loc: *v) {
                 if (auto [i, inserted] = result.insert(std::move(loc)); !inserted) {
-                        wxLogVerbose(_("%s: failed to insert %s:%s/%s"), 
-                                        wxString::FromAscii(__func__), wxString::FromUTF8(i->hostname), 
-                                        wxString::FromUTF8(i->service), wxString::FromUTF8(i->busid));
+                        // wxLogVerbose(_("%s: failed to insert %s:%s/%s"),
+                        //                 wxString::FromAscii(__func__), wxString::FromUTF8(i->hostname),
+                        //                 wxString::FromUTF8(i->service), wxString::FromUTF8(i->busid));
+                        spdlog::info("{}: failed to insert {}:{}/{}", wx_u8(wxString::FromAscii(__func__)),
+                                     wx_u8(wxString::FromUTF8(i->hostname)), wx_u8(wxString::FromUTF8(i->service)),
+                                     wx_u8(wxString::FromUTF8(i->busid)));
                 }
         }
 
@@ -377,11 +389,12 @@ wxDEFINE_EVENT(EVT_DEVICE_STATE, DeviceStateEvent);
 MainFrame::MainFrame(_In_ Handle read, _In_ int appearance) : 
         Frame(nullptr),
         m_read(std::move(read)),
-        m_log(new LogWindow(this, 
-                m_menu_log->FindItem(ID_TOGGLE_LOG_WINDOW),
-                m_menu_view->FindItem(wxID_ZOOM_IN),
-                m_menu_view->FindItem(wxID_ZOOM_OUT),
-                m_menu_view->FindItem(wxID_ZOOM_100)))
+        // m_log(new LogWindow(this,
+        //         m_menu_log->FindItem(ID_TOGGLE_LOG_WINDOW),
+        //         m_menu_view->FindItem(wxID_ZOOM_IN),
+        //         m_menu_view->FindItem(wxID_ZOOM_OUT),
+        //         m_menu_view->FindItem(wxID_ZOOM_100))),
+        m_log(nullptr)
 {
         wxASSERT(m_read);
         check_view_appearance(appearance);
@@ -409,8 +422,8 @@ void MainFrame::check_view_appearance(_In_ int appearance)
 
 void MainFrame::init()
 {
-        m_log->SetVerbose(true); // produce messages for wxLOG_Info
-        m_log->SetLogLevel(DEFAULT_LOGLEVEL);
+        // m_log->SetVerbose(true); // produce messages for wxLOG_Info
+        // m_log->SetLogLevel(DEFAULT_LOGLEVEL);
 
         auto app_name = wxGetApp().GetAppDisplayName();
         SetTitle(app_name);
@@ -498,7 +511,8 @@ void MainFrame::post_exit()
 
 void MainFrame::on_close(wxCloseEvent &event)
 {
-        wxLogVerbose(wxString::FromAscii(__func__));
+        // wxLogVerbose(wxString::FromAscii(__func__));
+        spdlog::info("{}", wx_u8(wxString::FromAscii(__func__)));
         wxASSERT(event.GetEventType() == wxEVT_CLOSE_WINDOW);
 
         if (m_close_to_tray && event.CanVeto()) {
@@ -520,20 +534,20 @@ void MainFrame::on_exit(wxCommandEvent&)
 
 void MainFrame::iconize_to_tray()
 {
-        auto &log = *m_log->GetFrame();
+        // auto &log = *m_log->GetFrame();
 
         if (!m_taskbar_icon) {
                 m_taskbar_icon = std::make_unique<TaskBarIcon>();
         } else if (m_taskbar_icon->IsIconInstalled()) {
                 wxASSERT(!IsShown());
-                wxASSERT(!log.IsShown());
+                // wxASSERT(!log.IsShown());
                 return;
         }
         
         if (!m_taskbar_icon->SetIcon(GetIcon(), GetTitle())) {
                 wxLogError(_("Could not set taskbar icon"));
         } else {
-                log.Hide();
+                // log.Hide();
                 Hide();
         }
 }
@@ -601,11 +615,13 @@ void MainFrame::on_device_state(_In_ DeviceStateEvent &event)
                 auto server = tree.GetItemParent(dev);
                 auto &url = tree.GetItemText(server);
                 auto &busid = tree.GetItemText(dev);
-                wxLogVerbose(_("Added %s/%s"), url, busid);
+                // wxLogVerbose(_("Added %s/%s"), url, busid);
+                spdlog::info("Added {}/{}", wx_u8(url), wx_u8(busid));
         }
 
         if (st.state == state::disconnected && is_empty(tree, dev)) { // connection has failed/closed
-                wxLogVerbose(_("Transient device removed"));
+                // wxLogVerbose(_("Transient device removed"));
+                spdlog::info("{}", wx_u8(_("Transient device removed")));
                 remove_device(dev);
                 return;
         }
@@ -613,7 +629,8 @@ void MainFrame::on_device_state(_In_ DeviceStateEvent &event)
         if (auto &cur_id = tree.GetItemText(dev, COL_SOURCE_ID); cur_id.empty() || st.state == state::plugged) {
                 // update state and source_id
         } else if (auto id = to_wxstring(st.source_id); id != cur_id) {
-                wxLogVerbose(_("Skip event from source %s != %s"), id, cur_id);
+                // wxLogVerbose(_("Skip event from source %s != %s"), id, cur_id);
+                spdlog::info("{}", wx_u8(wxString::Format(_("Skip event from source %s != %s"), id, cur_id)));
                 return;
         }
 
@@ -670,7 +687,8 @@ void MainFrame::on_copy_rows(wxCommandEvent&)
                 rows += to_string(tree, dev) + L'\n';
         }
 
-        wxLogVerbose(rows);
+        // wxLogVerbose(rows);
+        spdlog::info("{}", wx_u8(rows));
 
         if (wxClipboardLocker lck; !lck) {
                 wxLogError(_("Could not lock the clipboard"));
@@ -761,14 +779,16 @@ void MainFrame::set_persistent(_In_ wxTreeListItem device, _In_ bool persistent)
 
 void MainFrame::on_log_show_update_ui(wxUpdateUIEvent &event)
 {
-        auto f = m_log->GetFrame();
-        event.Check(f->IsShown());
+        // auto f = m_log->GetFrame();
+        // event.Check(f->IsShown());
+        event.Check(false);
 }
 
 void MainFrame::on_log_show(wxCommandEvent &event)
 {
-        bool checked = event.GetInt();
-        m_log->Show(checked);
+        // bool checked = event.GetInt();
+        // m_log->Show(checked);
+        (void)event;
 }
 
 void MainFrame::on_view_zebra_update_ui(wxUpdateUIEvent &event)
@@ -787,32 +807,16 @@ void MainFrame::on_view_zebra(wxCommandEvent&)
 
 void MainFrame::on_log_verbose_update_ui(wxUpdateUIEvent &event)
 {
-        auto verbose = m_log->GetLogLevel() == VERBOSE_LOGLEVEL;
-        event.Check(verbose);
+        // auto verbose = m_log->GetLogLevel() == VERBOSE_LOGLEVEL;
+        // event.Check(verbose);
+        event.Check(false);
 }
 
 void MainFrame::on_log_verbose(wxCommandEvent &event)
 {
-        bool checked = event.GetInt();
-        m_log->SetLogLevel(checked ? VERBOSE_LOGLEVEL : DEFAULT_LOGLEVEL);
-}
-
-void MainFrame::on_log_library_update_ui(wxUpdateUIEvent &event)
-{
-        auto verbose = m_log->GetLogLevel() == VERBOSE_LOGLEVEL;
-
-        if (!verbose && is_library_log_enabled()) {
-                enable_library_log(false);
-        }
-
-        event.Check(is_library_log_enabled());
-        event.Enable(verbose);
-}
-
-void MainFrame::on_log_library(wxCommandEvent &event)
-{
-        bool checked = event.GetInt();
-        enable_library_log(checked);
+        // bool checked = event.GetInt();
+        // m_log->SetLogLevel(checked ? VERBOSE_LOGLEVEL : DEFAULT_LOGLEVEL);
+        (void)event;
 }
 
 void MainFrame::on_start_in_tray_update_ui(wxUpdateUIEvent &event)
@@ -844,6 +848,10 @@ DWORD MainFrame::attach(
         wxString service;
 
         if (!split_server_url(url, hostname, service)) {
+                // wxLogVerbose(L"%s: split_server_url failed url=%s busid=%s",
+                //              wxString::FromAscii(__func__), url, busid);
+                spdlog::info("{}: split_server_url failed url={} busid={}", wx_u8(wxString::FromAscii(__func__)),
+                             wx_u8(url), wx_u8(busid));
                 return ERROR_INVALID_PARAMETER;
         }
 
@@ -852,6 +860,13 @@ DWORD MainFrame::attach(
                 .service = service.ToStdString(wxConvUTF8),
                 .busid = busid.ToStdString(wxConvUTF8),
         };
+
+        // wxLogVerbose(L"%s: %s/%s host=%s service=%s options %#lx vhci=%p",
+        //              wxString::FromAscii(__func__), url, busid, hostname, service, options,
+        //              static_cast<void *>(get_vhci().get()));
+        spdlog::info("{}: {}/{} host={} service={} options {:#x} vhci={}", wx_u8(wxString::FromAscii(__func__)),
+                     wx_u8(url), wx_u8(busid), wx_u8(hostname), wx_u8(service), options,
+                     static_cast<void *>(get_vhci().get()));
 
         DWORD err{};
         auto f = [&err, loc = std::move(loc), vhci = get_vhci().get(), options]
@@ -863,6 +878,15 @@ DWORD MainFrame::attach(
         auto msg = wxString::Format(L"%s/%s", url, busid);
         run_cancellable(this, msg, _("Attaching"), std::move(f));
 
+        const wxString status =
+                err == ERROR_SUCCESS ? wxString{L"ok"} :
+                err == ERROR_OPERATION_ABORTED ? wxString{L"cancelled"} :
+                GetLastErrorMsg(err);
+
+        // wxLogVerbose(L"%s: done %s/%s err=%lu (%s)",
+        //              wxString::FromAscii(__func__), url, busid, err, status);
+        spdlog::info("{}: done {}/{} err={} ({})", wx_u8(wxString::FromAscii(__func__)), wx_u8(url), wx_u8(busid),
+                     static_cast<unsigned long>(err), wx_u8(status));
         return err;
 }
 
@@ -873,21 +897,57 @@ void MainFrame::on_attach_once(wxCommandEvent&)
 
 void MainFrame::attach(_In_ unsigned long options)
 {
-        wxLogVerbose(L"%s, options %#lx", wxString::FromAscii(__func__), options);
+        // wxLogVerbose(L"%s, options %#lx", wxString::FromAscii(__func__), options);
+        spdlog::info("{}, options {:#x}", wx_u8(wxString::FromAscii(__func__)), options);
 
-        for (auto &tree = *m_treeListCtrl; auto &dev: get_selected_devices(tree, is_server)) {
+        auto &tree = *m_treeListCtrl;
+        auto devices = get_selected_devices(tree, is_server);
+
+        // wxLogVerbose(L"%s: selected %zu device row(s)",
+        //              wxString::FromAscii(__func__), devices.size());
+        spdlog::info("{}: selected {} device row(s)", wx_u8(wxString::FromAscii(__func__)), devices.size());
+
+        if (devices.empty()) {
+                // wxLogVerbose(L"%s: skip (nothing selected)",
+                //              wxString::FromAscii(__func__));
+                spdlog::info("{}: skip (nothing selected)", wx_u8(wxString::FromAscii(__func__)));
+                return;
+        }
+
+        std::size_t idx = 0;
+        for (auto &dev: devices) {
+                ++idx;
 
                 auto server = tree.GetItemParent(dev);
                 auto url = tree.GetItemText(server);
                 auto busid = tree.GetItemText(dev);
 
+                // wxLogVerbose(L"%s: [%zu/%zu] start %s/%s",
+                //              wxString::FromAscii(__func__), idx, devices.size(), url, busid);
+                spdlog::info("{}: [{}/{}] start {}/{}", wx_u8(wxString::FromAscii(__func__)), idx, devices.size(),
+                             wx_u8(url), wx_u8(busid));
+
                 if (auto err = attach(url, busid, options)) {
                         if (err != ERROR_OPERATION_ABORTED) {
+                                // wxLogVerbose(L"%s: [%zu/%zu] attach failed err=%lu",
+                                //              wxString::FromAscii(__func__), idx, devices.size(), err);
+                                spdlog::info("{}: [{}/{}] attach failed err={}", wx_u8(wxString::FromAscii(__func__)),
+                                             idx, devices.size(), static_cast<unsigned long>(err));
                                 wxLogError(_("Could not attach %s/%s\nError %lu\n%s"), 
                                               url, busid, err, GetLastErrorMsg(err));
+                        } else {
+                                // wxLogVerbose(L"%s: [%zu/%zu] attach cancelled %s/%s",
+                                //              wxString::FromAscii(__func__), idx, devices.size(), url, busid);
+                                spdlog::info("{}: [{}/{}] attach cancelled {}/{}", wx_u8(wxString::FromAscii(__func__)),
+                                             idx, devices.size(), wx_u8(url), wx_u8(busid));
                         }
                         break;
                 }
+
+                // wxLogVerbose(L"%s: [%zu/%zu] attach ok %s/%s",
+                //              wxString::FromAscii(__func__), idx, devices.size(), url, busid);
+                spdlog::info("{}: [{}/{}] attach ok {}/{}", wx_u8(wxString::FromAscii(__func__)), idx, devices.size(),
+                             wx_u8(url), wx_u8(busid));
         }
 }
 
@@ -934,7 +994,8 @@ void MainFrame::on_attach_stop_all(wxCommandEvent&)
 
 DWORD MainFrame::detach(_In_ int port)
 {
-        wxLogVerbose(_("Detach port %d"), port);
+        // wxLogVerbose(_("Detach port %d"), port);
+        spdlog::info("Detach port {}", port);
         auto err = ERROR_SUCCESS;
 
         auto f = [&err, port]
@@ -1117,7 +1178,8 @@ void MainFrame::add_exported_devices(wxCommandEvent&)
         }
 
         auto port = wxString::Format(L"%d", m_spinCtrlPort->GetValue());
-        wxLogVerbose(L"%s, host='%s', port='%s'", wxString::FromAscii(__func__), host, port);
+        // wxLogVerbose(L"%s, host='%s', port='%s'", wxString::FromAscii(__func__), host, port);
+        spdlog::info("{}, host='{}', port='{}'", wx_u8(wxString::FromAscii(__func__)), wx_u8(host), wx_u8(port));
 
         auto u8_host = host.ToStdString(wxConvUTF8);
         auto u8_port = port.ToStdString(wxConvUTF8);
@@ -1340,7 +1402,8 @@ void MainFrame::on_load(wxCommandEvent&)
                 auto [dev, added] = find_or_add_device(dc);
 
                 if (!(added || is_empty(*m_treeListCtrl, dev))) {
-                        wxLogVerbose(_("Skip loading existing device %s/%s"), get_url(dc), dc[COL_BUSID]);
+                        // wxLogVerbose(_("Skip loading existing device %s/%s"), get_url(dc), dc[COL_BUSID]);
+                        spdlog::info("{}", wx_u8(wxString::Format(_("Skip loading existing device %s/%s"), get_url(dc), dc[COL_BUSID])));
                         continue;
                 }
 
@@ -1359,7 +1422,8 @@ void MainFrame::on_load(wxCommandEvent&)
 
 void MainFrame::on_reload(wxCommandEvent &event)
 {
-        wxLogVerbose(wxString::FromAscii(__func__));
+        // wxLogVerbose(wxString::FromAscii(__func__));
+        spdlog::info("{}", wx_u8(wxString::FromAscii(__func__)));
 
         auto &tree = *m_treeListCtrl;
         tree.DeleteAllItems();
@@ -1517,7 +1581,8 @@ void MainFrame::set_status_text(
         _In_ const wxString &text, _In_ std::chrono::seconds duration, _In_ bool verbose_log)
 {
         if (verbose_log) {
-                wxLogVerbose(text);
+                // wxLogVerbose(text);
+                spdlog::info("{}", wx_u8(text));
         }
 
         if (auto ms = duration_cast<std::chrono::milliseconds>(duration).count(); m_status_bar_timer.StartOnce(ms)) {

@@ -59,14 +59,19 @@ void on_interface(int, const usb_device &d, int idx, const usb_interface &r)
 
 auto list_persistent_devices()
 {
+	spdlog::debug("list: persistent (stashed) devices");
 	if (auto dev = vhci::open(); !dev) {
 		spdlog::error(GetLastErrorMsg());
                 return false;
         } else if (auto v = vhci::get_persistent(dev.get()); !v) {
 		spdlog::error(GetLastErrorMsg());
                 return false;
-        } else for (auto &i: *v) {
-		printf("%s:%s/%s\n", i.hostname.c_str(), i.service.c_str(), i.busid.c_str());
+        } else {
+		spdlog::debug("list: vhci opened");
+		spdlog::debug("list: {} persistent device(s)", v->size());
+		for (auto &i: *v) {
+			printf("%s:%s/%s\n", i.hostname.c_str(), i.service.c_str(), i.busid.c_str());
+		}
         }
 
         return true;
@@ -78,6 +83,9 @@ auto list_persistent_devices()
 bool usbip::cmd_list(void *p)
 {
 	auto &args = *reinterpret_cast<list_args*>(p);
+	spdlog::debug("list: persistent={} remote='{}' tcp_port='{}'", args.persistent, args.remote,
+		      global_args.tcp_port);
+
 	if (args.persistent) {
 		return list_persistent_devices();
 	}
@@ -88,12 +96,14 @@ bool usbip::cmd_list(void *p)
 		return false;
 	}
 
-	spdlog::debug("connected to {}:{}", args.remote, global_args.tcp_port);
+	spdlog::debug("list: connected to {}:{}", args.remote, global_args.tcp_port);
 
+	spdlog::debug("list: enumerating exportable devices");
 	if (!enum_exportable_devices(sock.get(), on_device, on_interface, on_device_count)) {
 		spdlog::error(GetLastErrorMsg());
 		return false;
 	}
 
+	spdlog::debug("list: enumeration finished");
 	return true;
 }

@@ -1,0 +1,5 @@
+{
+  // Broker-managed runtime ownership map.
+  // Empty by default; entries are written and removed by usbip-broker.
+  "owners": []
+}

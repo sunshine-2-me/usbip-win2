@@ -84,6 +84,8 @@ enum class function { // 12 bit
         stop_attach_attempts,
         plugin_hardware_once,
         plugout_hardware_and_reattach,
+        plugin_hardware_for_user, // explicit-SID variant for persistent / offline reattach (System-only)
+        get_device_owner, // PDO -> owner SID/session lookup, used by usbip2_filter and broker
 };
 
 constexpr auto make(function id)
@@ -100,9 +102,36 @@ enum {
         STOP_ATTACH_ATTEMPTS = make(function::stop_attach_attempts),
         PLUGIN_HARDWARE_ONCE = make(function::plugin_hardware_once),
         PLUGOUT_HARDWARE_AND_REATTACH = make(function::plugout_hardware_and_reattach), // for internal use only
+        PLUGIN_HARDWARE_FOR_USER = make(function::plugin_hardware_for_user),
+        GET_DEVICE_OWNER = make(function::get_device_owner),
 };
 
 struct plugin_hardware : base, imported_device_location {};
+
+/*
+ * Explicit-owner-SID variant of plugin_hardware. Only callable by LocalSystem.
+ * Used by the broker service for persistent reattach after reboot, where there
+ * is no interactive caller to capture the SID from.
+ *
+ * SECURITY_MAX_SID_SIZE in WinNT.h is 68 bytes; 256 leaves comfortable headroom
+ * for unusual derived SIDs and keeps the struct fixed size for IOCTL buffering.
+ */
+constexpr ULONG OWNER_SID_MAX_SIZE = 256;
+
+struct plugin_hardware_for_user : base, imported_device_location
+{
+        ULONG sid_size;                       // bytes used in sid[]
+        ULONG session_id;                     // optional, 0 if unknown
+        UCHAR sid[OWNER_SID_MAX_SIZE];        // self-relative SID buffer
+};
+
+struct get_device_owner : base
+{
+        int port;                             // IN, hub port number, >= 1
+        ULONG session_id;                     // OUT
+        ULONG sid_size;                       // OUT, bytes used in sid[]
+        UCHAR sid[OWNER_SID_MAX_SIZE];        // OUT, self-relative SID buffer
+};
 
 struct stop_attach_attempts : base, imported_device_location
 {

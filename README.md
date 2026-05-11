@@ -130,6 +130,31 @@ successfully attached to port 1
 ```
 port 1 is successfully detached
 ```
+### Test USB isolation (per-user access)
+- Goal: ensure that a USB/IP device attached by one user is denied for other users.
+- Prerequisites
+  - Install USBip with `usbip-broker` service enabled.
+  - `usbip.exe` and `wusbip.exe` open the VHCI driver **only through usbip-broker** by default (policy and impersonation). **Elevated** processes (for example Run as administrator, full UAC elevation) open VHCI **directly** and bypass broker policy for attach. For debugging from a non-elevated account, set `USBIP_ALLOW_DIRECT_VHCI=1` for that process (same escape hatch as before).
+  - Policy file `%ProgramData%\USBip\policy.json`: on first attach, the broker **learns** the `(host, service, busid)` tuple for the caller’s SID and persists it. If the tuple is already bound to **another** SID, attach is denied. You can still pre-seed or edit rules manually (see `userspace/usbip-broker/policy.example.json`). Any `//` or `/* */` comments in the file are accepted on **read** only; when the broker rewrites the file after an auto-grant, it writes strict JSON **without** comments.
+  - Runtime ownership is maintained automatically in `%ProgramData%\USBip\owners.json` by `usbip-broker`.
+  - Have at least two Windows user accounts (for example: UserA and UserB).
+- Test steps
+  - Sign in as UserA (non-admin), run:
+    - `usbip.exe list -r <usbip server ip>`
+    - `usbip.exe attach -r <usbip server ip> -b <busid>`
+  - Verify the device works in UserA session (for example, appears in Device Manager and can be opened by an app).
+  - Sign out UserA (or keep session disconnected), then sign in as UserB.
+  - In UserB session, verify access is blocked:
+    - Existing attached device should not be usable by UserB.
+    - A direct open attempt from UserB should fail with access denied semantics.
+  - Return to UserA and verify the device is still usable for the owner session.
+- Optional negative/positive checks
+  - Detach in UserA, then attach the same busid in UserB; UserB should become the new owner.
+  - Reattach persistence check: if persistent attach is enabled, reconnect/reboot and verify ownership is still enforced.
+- Cleanup
+  - `usbip.exe detach -all`
+  - Remove temporary policy edits if any. If `usbip2_filter` never received a resolved USB PDO instance id for a device (no volume and post-enumeration did not match), a filter row may linger until reboot or manual cleanup; successful detach clears the row when the instance id was known.
+
 ### Uninstallation of USB/IP
 - Uninstall USB/IP app
 - Disable test signing if it was enabled during the installation

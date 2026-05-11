@@ -34,6 +34,10 @@
     <BuildDependency Project="userspace/libusbip/libusbip.vcxproj" />
     <BuildDependency Project="userspace/resources/resources.vcxproj" />
   </Project>
+  <Project Path="userspace/usbip-broker/usbip-broker.vcxproj" Id="520470da-b148-4dc3-913b-1f04f98b9c54">
+    <BuildDependency Project="userspace/libusbip/libusbip.vcxproj" />
+    <BuildDependency Project="userspace/resources/resources.vcxproj" />
+  </Project>
   <Project Path="userspace/wusbip/wusbip.vcxproj">
     <BuildDependency Project="userspace/libusbip/libusbip.vcxproj" />
   </Project>

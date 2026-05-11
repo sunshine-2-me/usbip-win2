@@ -17,15 +17,36 @@
 
 #include <resources\messages.h>
 
+#include <common/log_format.h>
+#include <common/log_paths.h>
+#include <common/process_elevation.h>
+
 #include <spdlog\spdlog.h>
+#include <spdlog\sinks\basic_file_sink.h>
+#include <spdlog\sinks\dist_sink.h>
 #include <spdlog\sinks\stdout_color_sinks.h>
 
 #include <CLI11\CLI11.hpp>
+
+#include <filesystem>
+#include <optional>
+
+#include <Windows.h>
 
 namespace
 {
 
 using namespace usbip;
+
+bool env_allows_direct_vhci() noexcept
+{
+	wchar_t buf[16];
+	const DWORD n = GetEnvironmentVariableW(L"USBIP_ALLOW_DIRECT_VHCI", buf, static_cast<DWORD>(std::size(buf)));
+	if (n == 0 || n >= std::size(buf)) {
+		return false;
+	}
+	return _wcsicmp(buf, L"1") == 0 || _wcsicmp(buf, L"true") == 0 || _wcsicmp(buf, L"yes") == 0;
+}
 
 const auto MAX_HUB_PORTS = 255; // @see drivers/usbip_ude/vhci.cpp, set_usb_ports_cnt
 
@@ -133,14 +154,58 @@ auto& get_resource_module() noexcept
 	return mod;
 }
 
-void init_spdlog()
+std::optional<std::filesystem::path> parse_libusbip_log_path_arg(int argc, wchar_t **argv)
 {
-	set_default_logger(spdlog::stderr_color_st("stderr"));
-	spdlog::set_pattern("%^%l%$: %v");
+	for (int i = 1; i < argc; ++i) {
+		if (std::wcscmp(argv[i], L"--libusbip-log") != 0) {
+			continue;
+		}
+		if (i + 1 < argc && argv[i + 1][0] != L'\0' && argv[i + 1][0] != L'-') {
+			return std::filesystem::path(argv[i + 1]);
+		}
+	}
+	return std::nullopt;
+}
 
-	using fn = void(const std::string&);
-	fn &f = spdlog::debug; // pick this overload
-	libusbip::set_debug_output(f);
+void init_spdlog(int argc, wchar_t **argv)
+{
+	std::filesystem::path file_path;
+	if (const auto o = parse_libusbip_log_path_arg(argc, argv)) {
+		file_path = *o;
+	} else {
+		file_path = usbip::default_usbip_log_file("usbip");
+	}
+
+	auto dist = std::make_shared<spdlog::sinks::dist_sink_mt>();
+	dist->add_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>());
+
+	bool file_sink_added = false;
+	if (!file_path.empty()) {
+		try {
+			dist->add_sink(std::make_shared<spdlog::sinks::basic_file_sink_mt>(file_path.string(), false));
+			file_sink_added = true;
+		} catch (...) {
+			// best-effort: stderr only
+		}
+	}
+
+	auto logger = std::make_shared<spdlog::logger>("usbip", dist);
+	logger->set_pattern(usbip::log_format_spdlog_pattern(true));
+	spdlog::set_default_logger(std::move(logger));
+
+	if (file_sink_added) {
+		spdlog::debug("usbip file log: {}", file_path.string());
+	} else if (!file_path.empty()) {
+		spdlog::debug("usbip file log unavailable (could not open: {})", file_path.string());
+	} else {
+		spdlog::debug("usbip file log disabled (empty path)");
+	}
+
+	libusbip::set_debug_output([](std::string msg) {
+		if (auto lg = spdlog::default_logger()) {
+			lg->log(spdlog::level::debug, "{}", msg);
+		}
+	});
 }
 
 void init(CLI::App &app)
@@ -164,7 +229,11 @@ void init(CLI::App &app)
 
 auto run(int argc, wchar_t *argv[])
 {
-	init_spdlog();
+	init_spdlog(argc, argv);
+
+	if (!env_allows_direct_vhci() && !usbip::process_is_elevated_admin()) {
+		usbip::vhci::set_require_broker_only(true);
+	}
 
 	if (!get_resource_module()) {
 		auto err = GetLastError();
@@ -178,13 +247,25 @@ auto run(int argc, wchar_t *argv[])
 		return EXIT_FAILURE;
 	}
 
-	CLI::App app("USB/IP client"); 
+	CLI::App app(
+		"USB/IP client. Global: -d/--debug. By default opens VHCI only via usbip-broker "
+		"(per-user isolation). Elevated processes skip that (direct VHCI). Set "
+		"USBIP_ALLOW_DIRECT_VHCI=1 to allow direct VHCI when not elevated. libusbip lines share "
+		"spdlog; default log "
+		"file is C:\\temp\\usbip\\logs\\usbip-yyyymmdd.log. Use --libusbip-log <path> before the "
+		"subcommand for a different file.");
 	init(app);
+
+	spdlog::debug("usbip parsing arguments");
 
 	try {                                                                                                              
 		app.parse(argc, argv);
 	} catch (CLI::ParseError &e) {
 		return app.exit(e);
+	}
+
+	if (const auto subs = app.get_subcommands(); !subs.empty()) {
+		spdlog::debug("usbip finished subcommand '{}'", subs.front()->get_name());
 	}
 
 	return EXIT_SUCCESS;

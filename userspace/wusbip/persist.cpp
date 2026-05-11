@@ -5,9 +5,9 @@
 #include "persist.h"
 #include "wxutils.h"
 #include "wusbip.h"
-#include "log.h"
 #include "font.h"
 
+#include <spdlog/spdlog.h>
 #include <wx/dataview.h>
 
 namespace
@@ -20,7 +20,7 @@ auto try_catch(_In_ const char *function, _In_ const std::function<void()> &func
         try {
                 func();
         } catch (std::exception &e) {
-                wxLogError(_("%s exception: %s"), wxString::FromAscii(function), what(e));
+                spdlog::error("{} exception: {}", function, std::string(what(e).utf8_string()));
                 return false;
         }
 
@@ -54,14 +54,14 @@ void wxPersistentMainFrame::Save() const
                 SaveValue(m_port, ctl->GetValue());
         }
 
-        if (auto fr = frame.m_log->GetFrame()) {
-                SaveValue(m_show_log_window, fr->IsShown());
-        }
-
-        if (auto log = frame.m_log) {
-                SaveValue(m_log_verbose, log->GetLogLevel() == VERBOSE_LOGLEVEL);
-                SaveValue(m_log_font_size, log->get_font_size());
-        }
+        // if (auto fr = frame.m_log->GetFrame()) {
+        //         SaveValue(m_show_log_window, fr->IsShown());
+        // }
+        //
+        // if (auto log = frame.m_log) {
+        //         SaveValue(m_log_verbose, log->GetLogLevel() == VERBOSE_LOGLEVEL);
+        //         SaveValue(m_log_font_size, log->get_font_size());
+        // }
 
         if (auto tb = frame.m_auiToolBar) {
                 SaveValue(m_toolbar_labels, tb->HasFlag(wxAUI_TB_TEXT));
@@ -72,7 +72,6 @@ void wxPersistentMainFrame::Save() const
         }
 
         SaveValue(m_tree_font_size, get_font_size(frame.m_treeListCtrl));
-        SaveValue(m_log_library, is_library_log_enabled());
 }
 
 bool wxPersistentMainFrame::Restore()
@@ -101,19 +100,19 @@ void wxPersistentMainFrame::do_restore()
                 frame.m_spinCtrlPort->SetValue(val);
         }
 
-        if (bool show{}; RestoreValue(m_show_log_window, &show)) {
-                auto fr = frame.m_log->GetFrame();
-                fr->Show(show);
-        }
-
-        if (bool verbose{}; RestoreValue(m_log_verbose, &verbose)) {
-                auto lvl = verbose ? VERBOSE_LOGLEVEL : DEFAULT_LOGLEVEL;
-                frame.m_log->SetLogLevel(lvl);
-        }
-
-        if (int pt{}; RestoreValue(m_log_font_size, &pt)) {
-                frame.m_log->set_font_size(pt);
-        }
+        // if (bool show{}; RestoreValue(m_show_log_window, &show)) {
+        //         auto fr = frame.m_log->GetFrame();
+        //         fr->Show(show);
+        // }
+        //
+        // if (bool verbose{}; RestoreValue(m_log_verbose, &verbose)) {
+        //         auto lvl = verbose ? VERBOSE_LOGLEVEL : DEFAULT_LOGLEVEL;
+        //         frame.m_log->SetLogLevel(lvl);
+        // }
+        //
+        // if (int pt{}; RestoreValue(m_log_font_size, &pt)) {
+        //         frame.m_log->set_font_size(pt);
+        // }
 
         if (bool ok{}; RestoreValue(m_toolbar_labels, &ok) && ok != frame.m_auiToolBar->HasFlag(wxAUI_TB_TEXT)) {
                 wxCommandEvent evt;
@@ -127,9 +126,5 @@ void wxPersistentMainFrame::do_restore()
 
         if (int pt{}; RestoreValue(m_tree_font_size, &pt)) {
                 set_font_size(frame.m_treeListCtrl, pt);
-        }
-
-        if (bool ok{}; RestoreValue(m_log_library, &ok) && ok) {
-                enable_library_log(true);
         }
 }

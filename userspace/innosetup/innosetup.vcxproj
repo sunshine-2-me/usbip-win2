@@ -117,6 +117,10 @@
       <Project>{36cee68d-d6cf-4413-978c-794488f44555}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
+    <ProjectReference Include="..\usbip-broker\usbip-broker.vcxproj">
+      <Project>{520470da-b148-4dc3-913b-1f04f98b9c54}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

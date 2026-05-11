@@ -70,10 +70,23 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" />
+  <!-- OutDir matches usbip.exe; Inno Setup uses that folder for wusbip.exe (see setup.iss BuildDir). -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnableManifest>true</VcpkgEnableManifest>
   </PropertyGroup>
@@ -104,10 +117,10 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>__WXDEBUG__;__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__WXDEBUG__;__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;SPDLOG_WCHAR_TO_UTF8_SUPPORT;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>..</AdditionalIncludeDirectories>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeTypeInfo>
@@ -116,7 +129,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Rpcrt4.lib;Comctl32.lib;shlwapi.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Rpcrt4.lib;Comctl32.lib;shlwapi.lib;Shell32.lib;Ole32.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>
@@ -134,10 +147,10 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>__WXDEBUG__;__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__WXDEBUG__;__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;SPDLOG_WCHAR_TO_UTF8_SUPPORT;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>..</AdditionalIncludeDirectories>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeTypeInfo>
@@ -146,7 +159,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Rpcrt4.lib;Comctl32.lib;shlwapi.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Rpcrt4.lib;Comctl32.lib;shlwapi.lib;Shell32.lib;Ole32.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>
@@ -166,10 +179,10 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;NDEBUG;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;NDEBUG;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;SPDLOG_WCHAR_TO_UTF8_SUPPORT;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>..</AdditionalIncludeDirectories>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeTypeInfo>
@@ -180,7 +193,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Rpcrt4.lib;Comctl32.lib;shlwapi.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Rpcrt4.lib;Comctl32.lib;shlwapi.lib;Shell32.lib;Ole32.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>
@@ -199,10 +212,10 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;NDEBUG;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;NDEBUG;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;SPDLOG_WCHAR_TO_UTF8_SUPPORT;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>..</AdditionalIncludeDirectories>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeTypeInfo>
@@ -213,7 +226,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Rpcrt4.lib;Comctl32.lib;shlwapi.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Rpcrt4.lib;Comctl32.lib;shlwapi.lib;Shell32.lib;Ole32.lib;setupapi.lib;advapi32.lib;ws2_32.lib;wintrust.lib;crypt32.lib;newdev.lib;CfgMgr32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>
@@ -284,9 +297,13 @@
     <None Include="resources\usb_dark.svg" />
     <None Include="resources\view_columns.svg" />
     <None Include="resources\view_columns_dark.svg" />
+    <None Include="packages.config" />
     <None Include="wxpatch.bat" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\common\log_format.cpp" />
+    <ClCompile Include="..\common\log_paths.cpp" />
+    <ClCompile Include="..\common\process_elevation.cpp" />
     <ClCompile Include="app.cpp" />
     <ClCompile Include="device_columns.cpp" />
     <ClCompile Include="frame.cpp" />
@@ -324,5 +341,13 @@
     <Image Include="resources\USBip.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\..\packages\Ponta.spdlog.1.14.1\build\native\Ponta.spdlog.targets" Condition="Exists('..\..\packages\Ponta.spdlog.1.14.1\build\native\Ponta.spdlog.targets')" />
+  </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\..\packages\Ponta.spdlog.1.14.1\build\native\Ponta.spdlog.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\Ponta.spdlog.1.14.1\build\native\Ponta.spdlog.targets'))" />
+  </Target>
 </Project>

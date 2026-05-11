@@ -792,7 +792,9 @@ PAGED wdm::object_reference usbip::device::detach(
         if (reattach) {
                 auto ctx = get_vhci_ctx(vhci);
                 auto delayed = plugout_and_delete;
-                start_attach_attempts(vhci, *ctx, ext.attr, delayed);
+                // Per-user isolation: preserve the owning user across reattach.
+                start_attach_attempts(vhci, *ctx, ext.attr, delayed,
+                                      ext.owner.sid, ext.owner.sid_size);
         }
 
         return thread;

@@ -19,6 +19,7 @@ using output_func_type = std::function<void(std::string)>;
 
 /*
  * Set a function if you want to get debug messages from the library.
+ * The callback may be invoked from worker threads; it must be thread-safe (e.g. spdlog).
  */
 USBIP_API void set_debug_output(const output_func_type &f);
 

@@ -2,10 +2,13 @@
  * Copyright (c) 2023-2025 Vadym Hrynchyshyn <vadimgrn@gmail.com>
  */
 
-#pragma once
-
 #include "..\output.h"
 #include "output.h"
+
+namespace libusbip
+{
+output_func_type output_function;
+}
 
 void libusbip::set_debug_output(const output_func_type &f)
 {

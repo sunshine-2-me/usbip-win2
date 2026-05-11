@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <wx/chartype.h>
 #include <wx/log.h>
 #include <wx/event.h>
 
@@ -51,7 +52,12 @@ private:
 namespace usbip
 {
 
-void enable_library_log(_In_ bool enable);
-bool is_library_log_enabled();
+/** spdlog (MSVC + default dated file under C:\\temp\\usbip\\logs) and libusbip::set_debug_output. Call before usbip::init. */
+void init_wusbip_host_logging(int argc, wxChar **argv);
+
+/** Routes wxLogError / wxLogMessage / etc. to spdlog (no wx log window). Call after init_wusbip_host_logging. */
+void install_wx_log_for_spdlog();
+
+void shutdown_wusbip_host_logging();
 
 } // namespace usbip
