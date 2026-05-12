@@ -44,6 +44,8 @@ bool usbip::cmd_port(void *p)
 {
         auto &args = *reinterpret_cast<port_args*>(p); 
 
+        spdlog::debug("port: persistent_stash={} filtered_port_count={}", args.persistent, args.ports.size());
+
         auto dev = vhci::open();
         if (!dev) {
                 spdlog::error(GetLastErrorMsg());
@@ -57,6 +59,7 @@ bool usbip::cmd_port(void *p)
         }
 
         spdlog::debug("{} imported usb device(s)", devices->size());
+        spdlog::debug("port: querying imported device details");
 
         std::vector<device_location> dl;
         if (args.persistent) {
@@ -86,7 +89,10 @@ bool usbip::cmd_port(void *p)
         if (args.persistent && !vhci::set_persistent(dev.get(), dl)) {
                 spdlog::error(GetLastErrorMsg());
                 ok = false;
+        } else if (args.persistent) {
+                spdlog::debug("port: wrote {} persistent location(s) to driver", dl.size());
         }
 
+        spdlog::debug("port: command finished ok={} matched_device={}", ok, found);
         return ok;
 }

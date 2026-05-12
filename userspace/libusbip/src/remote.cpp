@@ -423,6 +423,7 @@ auto usbip::connect(_In_ const char *hostname, _In_ const char *service) -> Sock
 			libusbip::output("setsockopt(SO_UPDATE_CONNECT_CONTEXT) error {}", last.error);
 			break;
 		} else {
+			libusbip::output("TCP connect ok {}:{} (address family={})", hostname, service, family);
 			return sock;
 		}
 	}
@@ -484,6 +485,8 @@ bool usbip::enum_exportable_devices(
 	_In_opt_ const usb_device_cnt_f &on_dev_cnt)
 {
 	assert(s != INVALID_SOCKET);
+
+	libusbip::output("enum_exportable_devices: send OP_REQ_DEVLIST");
 	
 	if (!send_op_common(s, OP_REQ_DEVLIST)) {
 		return false;

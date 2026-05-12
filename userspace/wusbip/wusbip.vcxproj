@@ -104,7 +104,7 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>__WXDEBUG__;__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__WXDEBUG__;__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;SPDLOG_WCHAR_TO_UTF8_SUPPORT;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>..</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
@@ -134,7 +134,7 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>__WXDEBUG__;__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__WXDEBUG__;__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;SPDLOG_WCHAR_TO_UTF8_SUPPORT;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>..</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
@@ -166,7 +166,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;NDEBUG;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;NDEBUG;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;SPDLOG_WCHAR_TO_UTF8_SUPPORT;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>..</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
@@ -199,7 +199,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;NDEBUG;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__WXMSW__;wxNO_IMPLICIT_WXSTRING_ENCODING;NDEBUG;_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX;SPDLOG_WCHAR_TO_UTF8_SUPPORT;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>..</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
@@ -287,6 +287,7 @@
     <None Include="wxpatch.bat" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\common\logging.cpp" />
     <ClCompile Include="app.cpp" />
     <ClCompile Include="device_columns.cpp" />
     <ClCompile Include="frame.cpp" />
@@ -296,6 +297,7 @@
     <ClCompile Include="tree_comparator.cpp" />
     <ClCompile Include="utils.cpp" />
     <ClCompile Include="wusbip.cpp" />
+    <ClCompile Include="wx_log_spdlog.cpp" />
     <ClCompile Include="font.cpp" />
     <ClCompile Include="wxutils.cpp" />
   </ItemGroup>
@@ -310,6 +312,7 @@
     <ClInclude Include="tree_comparator.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="wusbip.h" />
+    <ClInclude Include="wx_log_spdlog.h" />
     <ClInclude Include="font.h" />
     <ClInclude Include="wxutils.h" />
   </ItemGroup>
@@ -318,11 +321,22 @@
     <Text Include="readme.txt" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
     <ResourceCompile Include="wusbip.rc" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="resources\USBip.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\..\packages\Ponta.spdlog.1.14.1\build\native\Ponta.spdlog.targets" Condition="Exists('..\..\packages\Ponta.spdlog.1.14.1\build\native\Ponta.spdlog.targets')" />
+  </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\..\packages\Ponta.spdlog.1.14.1\build\native\Ponta.spdlog.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\Ponta.spdlog.1.14.1\build\native\Ponta.spdlog.targets'))" />
+  </Target>
 </Project>

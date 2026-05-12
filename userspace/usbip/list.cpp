@@ -78,7 +78,10 @@ auto list_persistent_devices()
 bool usbip::cmd_list(void *p)
 {
 	auto &args = *reinterpret_cast<list_args*>(p);
+	spdlog::debug("list: persistent={} remote='{}' tcp='{}'", args.persistent, args.remote, global_args.tcp_port);
+
 	if (args.persistent) {
+		spdlog::debug("list: reading persistent devices from driver");
 		return list_persistent_devices();
 	}
 
@@ -88,12 +91,14 @@ bool usbip::cmd_list(void *p)
 		return false;
 	}
 
-	spdlog::debug("connected to {}:{}", args.remote, global_args.tcp_port);
+	spdlog::debug("list: connected to {}:{}", args.remote, global_args.tcp_port);
+	spdlog::debug("list: requesting exportable device list");
 
 	if (!enum_exportable_devices(sock.get(), on_device, on_interface, on_device_count)) {
 		spdlog::error(GetLastErrorMsg());
 		return false;
 	}
 
+	spdlog::debug("list: enumeration finished");
 	return true;
 }

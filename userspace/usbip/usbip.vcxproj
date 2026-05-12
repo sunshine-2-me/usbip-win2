@@ -173,6 +173,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="strings.cpp" />
+    <ClCompile Include="..\common\logging.cpp" />
     <ClCompile Include="usbip.cpp" />
     <ClCompile Include="attach.cpp" />
     <ClCompile Include="detach.cpp" />

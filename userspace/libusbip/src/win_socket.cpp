@@ -28,6 +28,9 @@ auto init_wsa() noexcept
                 return false;
         }
 
+        libusbip::output("WSAStartup ok, negotiated WinSock version {}.{}", LOBYTE(wsaData.wVersion),
+                         HIBYTE(wsaData.wVersion));
+
         return true;
 }
 

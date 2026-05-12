@@ -7,6 +7,8 @@
 
 #include <libusbip/output.h>
 
+#include <spdlog\spdlog.h>
+
 #include <wx/frame.h>
 #include <wx/menuitem.h>
 #include <wx/textctrl.h>
@@ -158,19 +160,30 @@ void LogWindow::on_mouse_wheel(_In_ wxMouseEvent &event)
  * and get_str() result contains '%'. 
  * wxLogVerbose(L"lib: " + wxString::FromUTF8(s)) can throw exception for this reason too.
  */
+namespace
+{
+
+bool g_library_verbose_to_wx{};
+
+} // namespace
+
 void usbip::enable_library_log(_In_ bool enable)
 {
-        libusbip::output_func_type f;
+        g_library_verbose_to_wx = enable;
 
         if (enable) {
-                f = [] (auto s) { wxLogVerbose(L"lib: %s", wxString::FromUTF8(s)); }; // see comments
+                libusbip::set_debug_output([] (const std::string &s) {
+                        spdlog::debug("lib: {}", s);
+                        wxLogVerbose(L"lib: %s", wxString::FromUTF8(s)); // see comments
+                });
+        } else {
+                using fn = void(const std::string &);
+                fn &ref = spdlog::debug;
+                libusbip::set_debug_output(ref);
         }
-
-        libusbip::set_debug_output(f);
 }
 
 bool usbip::is_library_log_enabled()
 {
-        auto &f = libusbip::get_debug_output();
-        return static_cast<bool>(f);
+        return g_library_verbose_to_wx;
 }

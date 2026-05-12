@@ -6,6 +6,7 @@
 #include "resource.h"
 
 #include <libusbip\output.h>
+#include <common\logging.h>
 #include <libusbip\win_handle.h>
 #include <libusbip\win_socket.h>
 #include <libusbip\format_message.h>
@@ -18,7 +19,6 @@
 #include <resources\messages.h>
 
 #include <spdlog\spdlog.h>
-#include <spdlog\sinks\stdout_color_sinks.h>
 
 #include <CLI11\CLI11.hpp>
 
@@ -133,16 +133,6 @@ auto& get_resource_module() noexcept
 	return mod;
 }
 
-void init_spdlog()
-{
-	set_default_logger(spdlog::stderr_color_st("stderr"));
-	spdlog::set_pattern("%^%l%$: %v");
-
-	using fn = void(const std::string&);
-	fn &f = spdlog::debug; // pick this overload
-	libusbip::set_debug_output(f);
-}
-
 void init(CLI::App &app)
 {
 	app.option_defaults()->always_capture_default();
@@ -164,7 +154,14 @@ void init(CLI::App &app)
 
 auto run(int argc, wchar_t *argv[])
 {
-	init_spdlog();
+	libusbip::init_logging({}, true);
+
+	if (argc > 0 && argv[0]) {
+		spdlog::debug("usbip startup argc={} image='{}'", argc, wchar_to_utf8_or_errmsg(argv[0]));
+	} else {
+		spdlog::debug("usbip startup argc={}", argc);
+	}
+	spdlog::debug("usbip default tcp_port service string '{}'", global_args.tcp_port);
 
 	if (!get_resource_module()) {
 		auto err = GetLastError();
@@ -177,12 +174,15 @@ auto run(int argc, wchar_t *argv[])
 		spdlog::critical("can't initialize Windows Sockets 2, {}", GetLastErrorMsg());
 		return EXIT_FAILURE;
 	}
+	spdlog::debug("WinSock initialized");
 
 	CLI::App app("USB/IP client"); 
 	init(app);
 
 	try {                                                                                                              
+		spdlog::debug("parsing CLI ({} wide args)", argc);
 		app.parse(argc, argv);
+		spdlog::debug("CLI parse finished, command completed");
 	} catch (CLI::ParseError &e) {
 		return app.exit(e);
 	}
@@ -220,7 +220,7 @@ int wmain(int argc, wchar_t *argv[])
 	try {
 		ret = run(argc, argv);
 	} catch (std::exception &e) {
-		printf("exception: %s\n", e.what());
+		spdlog::critical("exception: {}", e.what());
 	}
 
 	return ret;

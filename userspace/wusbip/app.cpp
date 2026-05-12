@@ -5,8 +5,12 @@
 #include "app.h"
 #include "utils.h"
 #include "wusbip.h"
+#include "wx_log_spdlog.h"
 
+#include <common\logging.h>
 #include <libusbip/src/file_ver.h>
+#include <libusbip/src/strconv.h>
+#include <spdlog\spdlog.h>
 #include <wx/config.h>
 
 namespace
@@ -61,13 +65,26 @@ App::App()
 
 bool App::OnInit()
 {
+        libusbip::init_logging({}, false);
+        spdlog::set_level(spdlog::level::debug);
+        spdlog::debug("wusbip: file logging initialized, installing wx->spdlog chain");
+        usbip::install_wx_spdlog_chain();
+
         if (!wxApp::OnInit()) {
                 return false;
         }
 
         set_names();
 
+        const auto &v = win::get_file_version();
+        if (v) {
+                spdlog::debug("wusbip: product='{}' file_version='{}'",
+                              usbip::wchar_to_utf8_or_errmsg(v.GetProductName()),
+                              usbip::wchar_to_utf8_or_errmsg(v.GetFileVersion()));
+        }
+
         auto app = set_appearance();
+        spdlog::debug("wusbip: appearance selected, opening main frame");
         return init_mainframe(app);
 }
 

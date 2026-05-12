@@ -208,6 +208,10 @@ auto usbip::vhci::open(_In_ bool overlapped) -> Handle
                                 nullptr)); // hTemplateFile
         }
 
+        if (h) {
+                libusbip::output("vhci open: success overlapped={}", overlapped);
+        }
+
         return h;
 }
 
@@ -250,6 +254,7 @@ std::optional<std::vector<usbip::imported_device>> usbip::vhci::get_imported_dev
         } else {
                 auto cnt = devices_size/sizeof(*r->devices);
                 devices = make_imported_devices({r->devices, cnt});
+                libusbip::output("vhci get_imported_devices: {} device struct(s)", cnt);
         }
 
         return devices;
@@ -257,6 +262,9 @@ std::optional<std::vector<usbip::imported_device>> usbip::vhci::get_imported_dev
 
 USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &location, _In_ unsigned long options)
 {
+        libusbip::output("vhci attach: host='{}' service='{}' busid='{}' options={:#x}", location.hostname,
+                          location.service, location.busid, options);
+
         if (options && options != ATTACH_ONCE) {
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return 0;
@@ -278,6 +286,7 @@ USBIP_API int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &l
                         SetLastError(USBIP_ERROR_DRIVER_RESPONSE);
                 } else {
                         assert(r.port > 0);
+                        libusbip::output("vhci attach: driver returned hub port {}", r.port);
                         return r.port;
                 }
         }
@@ -297,6 +306,8 @@ int usbip::vhci::attach(_In_ HANDLE dev, _In_ const device_location &location)
 
 int usbip::vhci::stop_attach_attempts(_In_ HANDLE dev, _In_opt_ const device_location *location)
 {
+        libusbip::output("vhci stop_attach_attempts: filter_by_location={}", static_cast<bool>(location));
+
         ioctl::stop_attach_attempts r {{ .size = sizeof(r) }};
 
         if (location && !assign(r, *location)) {
@@ -312,12 +323,15 @@ int usbip::vhci::stop_attach_attempts(_In_ HANDLE dev, _In_opt_ const device_loc
                 return -1;
         } else {
                 assert(r.count >= 0);
+                libusbip::output("vhci stop_attach_attempts: stopped {} pending attempt(s)", r.count);
                 return r.count;
         }
 }
 
 bool usbip::vhci::detach(_In_ HANDLE dev, _In_ int port)
 {
+        libusbip::output("vhci detach: port={}", port);
+
         ioctl::plugout_hardware r { .port = port };
         r.size = sizeof(r);
 
